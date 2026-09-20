@@ -1,0 +1,47 @@
+{
+  "name": "dsh-xiaoai",
+  "version": "0.1.0",
+  "description": "DSH 语音插件：小米音箱（小爱）作为 DSH 的耳朵和嘴巴，AI 处理完全交给 DSH。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "xiaoai",
+    "xiaomi",
+    "speaker",
+    "voice"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.1.1-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node tmp-tests/test_host.mjs && node tmp-tests/test_client.mjs"
+  },
+  "author": ""
+}

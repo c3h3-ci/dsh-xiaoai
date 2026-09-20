@@ -1,0 +1,108 @@
+/**
+ * 小米音箱连接层 —— 只做两件事：抓语音文字、播放 TTS。
+ * 不含任何 AI 逻辑（那是 DSH 的事）。
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { getMiNA, getMiIOT } from "../vendor/mi-service-lite.js";
+
+/** OH2P（Xiaomi 智能音箱 Pro）的 MIoT 指令，来自 MiGPT 官方兼容表 */
+const MODEL_COMMANDS = {
+  OH2P: { tts: [7, 3], wakeUp: [7, 1] },
+  LX06: { tts: [5, 1], wakeUp: [5, 3] },
+};
+const DEFAULT_COMMANDS = { tts: [5, 1], wakeUp: [5, 3] };
+
+export class XiaomiSpeaker {
+  #na = null;
+  #iot = null;
+  #device = null;
+
+  constructor({ userId, password, did, miStorePath, logger }) {
+    this.userId = userId;
+    this.password = password;
+    this.did = did;
+    this.miStorePath = miStorePath;
+    this.log = logger ?? (() => {});
+  }
+
+  /** 建立 MiNA / MiIOT 连接。凭据来自 .mi.json（已绕过密码登录）。 */
+  async connect() {
+    // 注意：did 必须在这里传，否则库的 overrides 会用 undefined 覆盖 store 里的值
+    const cfg = { userId: this.userId, password: this.password, did: this.did };
+    this.#na = await getMiNA(cfg);
+    this.#iot = await getMiIOT(cfg);
+    if (!this.#na || !this.#iot) throw new Error("小米登录失败（检查 .mi.json 凭据）");
+    this.#device = await this.#resolveDevice();
+    const model = String(this.#device?.hardware ?? "").toUpperCase();
+    const cmds = MODEL_COMMANDS[model] ?? DEFAULT_COMMANDS;
+    this.commands = cmds;
+    this.log(`已连接音箱: ${this.#device?.name} (${model}) tts=${JSON.stringify(cmds.tts)}`);
+    return this.#device;
+  }
+
+  /** 按 did 或名称找到目标设备。 */
+  async #resolveDevice() {
+    const devices = await this.#na.getDevices();
+    const list = Array.isArray(devices) ? devices : devices?.data ?? [];
+    const wanted = String(this.did ?? "").trim();
+    const found =
+      list.find((d) => String(d.deviceId) === wanted) ??
+      list.find((d) => String(d.miotDID) === wanted) ??
+      list.find((d) => String(d.name) === wanted) ??
+      list.find((d) => String(d.alias) === wanted);
+    if (!found) throw new Error(`找不到设备: ${wanted}`);
+    return found;
+  }
+
+  /**
+   * 拉取最近的对话记录（新→旧）。
+   * 真实结构：{ records: [{ query, answers: [{ type: "TTS"|"LLM", tts: {text}, llm: {text} }], time }] }
+   */
+  async fetchConversations(limit = 3) {
+    try {
+      const res = await this.#na.getConversations({ limit });
+      const records = res?.records ?? [];
+      return records.map((r) => ({
+        query: String(r.query ?? "").trim(),
+        answer: String(r.answers?.[0]?.tts?.text ?? r.answers?.[0]?.llm?.text ?? "").trim(),
+        time: r.time,
+        raw: r,
+      }));
+    } catch (err) {
+      this.log(`获取对话失败: ${err?.message ?? err}`);
+      return [];
+    }
+  }
+
+  /** 唤醒音箱（发 TTS 前需要，否则可能被忽略）。 */
+  async wakeUp() {
+    try {
+      await this.#iot.doAction(...this.commands.wakeUp);
+    } catch (err) {
+      this.log(`唤醒失败: ${err?.message ?? err}`);
+    }
+  }
+
+  /** 用音箱的 TTS 念出一段文字。 */
+  async say(text) {
+    const clean = String(text ?? "").trim();
+    if (!clean) return;
+    await this.wakeUp();
+    await this.#iot.doAction(...this.commands.tts, clean);
+  }
+}
+
+/** 读取/写入 MiGPT 兼容的 .mi.json 凭据缓存。 */
+export function readMiStore(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function writeMiStore(file, store) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(store, null, 2));
+}
