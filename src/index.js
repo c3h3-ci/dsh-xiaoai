@@ -280,6 +280,27 @@ function buildSettingsSchema(z) {
     triggerKeywords: z.array(z.string()).default([...DEFAULTS.triggerKeywords]),
     /** 正则，匹配则忽略。 */
     ignorePatterns: z.array(z.string()).default([...DEFAULTS.ignorePatterns]),
+    // ── 音箱侧：唤醒与 AI 模式 ──
+    /** 启用 AI 模式状态机；false 时退化为旧的逐条关键词匹配。 */
+    aiModeEnabled: z.boolean().default(DEFAULTS.aiModeEnabled),
+    /** 「直接问」：以这些词开头时立刻交给 DSH，但不改变模式。 */
+    callAIKeywords: z.array(z.string()).default([...DEFAULTS.callAIKeywords]),
+    /** 「进入 AI 模式」：之后所有话都交给 DSH，无需重复喊触发词。 */
+    wakeUpKeywords: z.array(z.string()).default([...DEFAULTS.wakeUpKeywords]),
+    /** 「退出 AI 模式」：回到 idle，普通话不再处理。 */
+    exitKeywords: z.array(z.string()).default([...DEFAULTS.exitKeywords]),
+    /** AI 模式下无对话多久自动退出（秒，最小 5）。 */
+    exitKeepAliveAfter: z.number().default(DEFAULTS.exitKeepAliveAfter),
+    /** 进入 AI 模式的提示语（空数组 = 不播报）。 */
+    onEnterAI: z.array(z.string()).default([...DEFAULTS.onEnterAI]),
+    /** 退出 AI 模式的提示语。 */
+    onExitAI: z.array(z.string()).default([...DEFAULTS.onExitAI]),
+    /** 思考中的提示语（随机取一条）。 */
+    onAIAsking: z.array(z.string()).default([...DEFAULTS.onAIAsking]),
+    /** 回答完毕的提示语。 */
+    onAIReplied: z.array(z.string()).default([...DEFAULTS.onAIReplied]),
+    /** 出错时的提示语。 */
+    onAIError: z.array(z.string()).default([...DEFAULTS.onAIError]),
     /** DSH 桥接端点（仅在无法用进程内 agent 时使用）。 */
     dshApiUrl: z.string().default(DEFAULTS.dshApiUrl),
     /** 桥接鉴权（敏感）。 */
