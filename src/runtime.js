@@ -55,6 +55,12 @@ export const DEFAULTS = Object.freeze({
   onExitAI: ["已退出AI模式"],
   onAIAsking: ["让我想想"],
   onAIReplied: [],
+  /** 长任务进度安抚语（任务超过 progressAfterSeconds 秒未完成时播一次）。 */
+  onAIProgress: ["还在处理，请稍等一下"],
+  /** 多久没结果就播进度语（秒，最小 10）。 */
+  progressAfterSeconds: 35,
+  /** 保留多少轮对话历史（供 UI 查看）。 */
+  historyLimit: 20,
   onAIError: ["抱歉，出错了"],
   // ── 分类错误提示（按错误类型播报，比笼统的「出错了」有用得多）──
   // 未配置时回退到 onAIError。
@@ -150,6 +156,11 @@ export class XiaoaiRuntime {
   /** 「无对话自动退出」的倒计时句柄。 */
   #keepAliveTimer = null;
 
+  /** 对话历史环形缓冲（元素 {query, reply, at}）。 */
+  #history = [];
+  /** 保留多少轮（见 DEFAULTS.historyLimit）。 */
+  #historyLimit = 20;
+
   constructor({ logger, stateDir } = {}) {
     this.logger = logger ?? ((m) => console.log(`[xiaoai] ${m}`));
     // 插件版本只往内存 + console 写日志，文件里什么都没有 —— 而 DSH 的
@@ -170,6 +181,8 @@ export class XiaoaiRuntime {
       dsh: { reachable: false },
       lastHeard: null,
       lastReply: null,
+      /** 最近若干轮对话（环形，供 UI 查看/复制）。 */
+      history: [],
       lastSpokenAt: null,
       handledCount: 0,
       consecutiveErrors: 0,
@@ -847,7 +860,30 @@ export class XiaoaiRuntime {
         throw new Error("agent 没有 followup 方法，无法发起对话");
       }
       await agent.followup(message);
-      await finished.promise;
+
+      // 长任务进度播报：等 35 秒还没结果就再播一句安抚语。
+      //
+      // 为什么需要：复杂任务（写报告、查大量数据）可能跑 1-2 分钟，
+      // 而「让我想想」只能撑住前十几秒的耐心。之后全程静音，用户会以为
+      // 音箱卡死或没听懂，往往会重复说话，反而让 agent 更忙。
+      //
+      // 只播一次（不做循环）：反复播报本身就是噪音，且会占用 TTS 通道，
+      // 万一此时答案回来了，两句还会叠在一起。一次提醒已经足够表达
+      // 「我在处理，别急」。
+      let progressTimer = null;
+      const progressPhrases = this.#config.onAIProgress;
+      if (Array.isArray(progressPhrases) && progressPhrases.length > 0) {
+        progressTimer = setTimeout(() => {
+          void this.#sayPhrase(progressPhrases, "进度");
+        }, Math.max(10, Number(this.#config.progressAfterSeconds) || 35) * 1000);
+        progressTimer.unref?.();
+      }
+
+      try {
+        await finished.promise;
+      } finally {
+        if (progressTimer) clearTimeout(progressTimer);
+      }
       // 给事件流一点落地时间，确保最后一条 assistant 消息被收到
       await new Promise((r) => setTimeout(r, 600));
     } finally {
@@ -947,6 +983,33 @@ export class XiaoaiRuntime {
     } catch (err) {
       this.log(`提示语播报失败（${label}）: ${err?.message ?? err}`);
     }
+  }
+
+  /**
+   * 记一轮对话到历史（环形缓冲）。
+   *
+   * 为什么值得存：音箱没有屏幕，用户事后想问「刚才那个是多少」时，
+   * 唯一的线索就是面板上的最近一条。保留 N 轮让用户能在面板里回看、
+   * 复制，也能帮助我们排查「它到底听到了什么」。
+   *
+   * @param {string} query 用户说的原话
+   * @param {string|null} reply 播报的回复（失败时为 null）
+   * @param {number} at 时间戳（毫秒）
+   */
+  #pushHistory(query, reply, at) {
+    const limit = Math.max(1, Number(this.#config.historyLimit) || 20);
+    this.#historyLimit = limit;
+    this.#history.push({
+      query: String(query ?? ""),
+      reply: reply === null || reply === undefined ? null : String(reply),
+      at: Number(at) || Date.now(),
+    });
+    // 环形：超限时丢弃最旧的
+    if (this.#history.length > limit) {
+      this.#history = this.#history.slice(-limit);
+    }
+    // 同步进 status 供 UI 读取（深拷贝，避免外部改到内部数组）
+    this.#patch({ history: this.#history.map((x) => ({ ...x })) });
   }
 
   /**
@@ -1494,10 +1557,12 @@ export class XiaoaiRuntime {
       try {
         const reply = await this.#handleOne(rec.query);
         this.#patch({ handledCount: this.status.handledCount + 1 });
+        this.#pushHistory(rec.query, reply, rec.time);
         void reply;
       } catch (err) {
         this.log(`❌ 处理失败: ${err?.message ?? err}`);
         this.#patch({ lastError: String(err?.message ?? err) });
+        this.#pushHistory(rec.query, null, rec.time);
         // 按错误类型播报更具体的提示 —— 「抱歉，出错了」对用户毫无信息量，
         // 用户无法据此判断该重试、该重新登录、还是该换个说法。
         await this.#sayPhrase(this.#classifyErrorPhrases(err), "错误");

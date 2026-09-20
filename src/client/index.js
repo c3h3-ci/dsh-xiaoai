@@ -1534,6 +1534,37 @@ window.__ModuleLoader__.load({
 			const safe = status && typeof status === "object" ? status : {};
 			const heard = safe.lastHeard;
 			const reply = safe.lastReply;
+			// 对话历史（最近若干轮）—— 音箱没有屏幕，用户事后只能靠面板回看。
+			const history = Array.isArray(safe.history) ? safe.history.slice(-8).reverse() : [];
+			const rows = [];
+			for (let i = 0; i < history.length; i += 1) {
+				const item = history[i] || {};
+				rows.push(
+					h(
+						"div",
+						{ className: "xiaoai-history-item", key: "h" + i },
+						h(
+							"div",
+							{ className: "xiaoai-history-q" },
+							h("span", { className: "xiaoai-history-tag" }, "问"),
+							h("span", null, String(item.query || "")),
+							h("span", { className: "xiaoai-history-time" }, relativeTime(item.at))
+						),
+						h(
+							"div",
+							{ className: "xiaoai-history-a" },
+							h("span", { className: "xiaoai-history-tag" }, "答"),
+							h(
+								"span",
+								null,
+								item.reply === null || item.reply === undefined || item.reply === ""
+									? "（未回复）"
+									: String(item.reply)
+							)
+						)
+					)
+				);
+			}
 			return h(
 				"div",
 				{ className: "xiaoai-recent" },
@@ -1550,7 +1581,15 @@ window.__ModuleLoader__.load({
 						? String(reply.text) + "（" + relativeTime(reply.at) + "）"
 						: "暂无"
 				),
-				InfoRow("已处理条数", String(typeof safe.handledCount === "number" ? safe.handledCount : 0))
+				InfoRow("已处理条数", String(typeof safe.handledCount === "number" ? safe.handledCount : 0)),
+				history.length > 0
+					? h(
+							"details",
+							{ className: "xiaoai-history", key: "history" },
+							h("summary", null, "对话历史（最近 " + history.length + " 轮）"),
+							...rows
+						)
+					: null
 			);
 		}
 
