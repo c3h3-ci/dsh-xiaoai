@@ -99,6 +99,77 @@ const MIN_POLL_MS = 2000;
 /** 日志文件超过该字节数就轮转（保留最近一半），避免无限增长。 */
 const LOG_ROTATE_BYTES = 1024 * 1024;
 
+/**
+ * 把模型输出清洗成「能被念出来」的纯文本。
+ *
+ * 为什么需要（除了 system 约束之外的兜底）：
+ * 我们在 setup 阶段注入过「不要用 Markdown」的约束，但那只对**遵守指令的
+ * 模型**有效 —— 模型换了、预设覆盖了、或者它只是偶尔不听话，用户就会听到
+ * 「星号星号 加粗 星号星号」「反引号 switch 点 xxx」这种灾难。
+ * 播报前再洗一遍是最后一道闸门。
+ *
+ * 处理项（都是实测出现过或 TTS 明确会念错的）：
+ *   · 代码块 / 行内代码的反引号
+ *   · 粗体斜体星号、下划线强调
+ *   · 标题井号、引用大于号、列表符号
+ *   · 表格的竖线与分隔行
+ *   · 链接语法保留可读文字、丢掉 URL
+ *   · emoji 与颜文字（TTS 会念名字或直接卡住）
+ *   · 实体 ID / 英文标识符（形如 switch.xxx、light.xxx）
+ *   · 连续空白与多余换行
+ *
+ * @param {string} text 原始文本
+ * @returns {string} 适合播报的文本（可能为空串）
+ */
+export function cleanForSpeech(text) {
+  let s = String(text ?? "");
+  if (!s.trim()) return "";
+
+  // 1. 代码块整体去掉围栏，保留内容（内容常是要点）
+  s = s.replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, "$1");
+  // 2. 行内代码
+  s = s.replace(/`([^`]*)`/g, "$1");
+  // 3. 图片：直接删（念 URL 无意义）
+  s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  // 4. 链接：保留文字，丢掉 URL
+  s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+  // 5. 粗体/斜体（含 __ 与 _）
+  s = s.replace(/\*\*([^*]+)\*\*/g, "$1");
+  s = s.replace(/\*([^*]+)\*/g, "$1");
+  s = s.replace(/__([^_]+)__/g, "$1");
+  s = s.replace(/(?<![A-Za-z0-9_])_([^_]+)_(?![A-Za-z0-9_])/g, "$1");
+  // 6. 标题 / 引用 / 列表符号（行首）
+  s = s.replace(/^[ \t]*#{1,6}[ \t]*/gm, "");
+  s = s.replace(/^[ \t]*>[ \t]?/gm, "");
+  s = s.replace(/^[ \t]*[-*+][ \t]+/gm, "");
+  s = s.replace(/^[ \t]*\d+[.)][ \t]+/gm, "");
+  // 7. 表格：分隔行整行删；数据行的竖线换成顿号（保留可读性）
+  s = s.replace(/^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/gm, "");
+  s = s.replace(/[ \t]*\|[ \t]*/g, "、");
+  // 8. 实体 ID / 英文标识符（switch.xxx_yyy、light.abc）
+  s = s.replace(/\b(?:switch|light|sensor|binary_sensor|climate|cover|fan|lock|media_player|automation|script|scene|input_[a-z]+)\.[a-z0-9_]+/gi, "该设备");
+  // 9. 独立的长英文标识符（形如 xxx_yyy_zzz，含下划线且无空格）
+  s = s.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+){2,}\b/gi, "");
+  // 10. 残留的「键: 值」调试对（实测 agent 会把 verified_state: on 这类
+  //     内部字段吐进回复里，念出来毫无意义）
+  s = s.replace(/\b[a-z][a-z0-9_]*\s*[:：]\s*[a-z0-9_]+\b/gi, "");
+  // 11. URL
+  s = s.replace(/https?:\/\/\S+/g, "");
+  // 12. emoji 与常见符号（保留中文标点）
+  s = s.replace(
+    /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu,
+    ""
+  );
+  // 13. 归整空白
+  s = s.replace(/[ \t]{2,}/g, " ");
+  s = s.replace(/\n{2,}/g, "；"); // 段落之间用停顿词连起来，避免 TTS 直接跳过
+  s = s.replace(/\n/g, "，");
+  s = s.replace(/^[，、；\s]+|[，、；\s]+$/g, "");
+  s = s.replace(/[，、；]{2,}/g, "，");
+
+  return s.trim();
+}
+
 /** 从会话事件的任意载荷里抽取纯文本。 */
 function extractText(node) {
   if (node == null) return "";
@@ -1571,10 +1642,12 @@ export class XiaoaiRuntime {
     }
   }
 
-  /** 一条语音的完整处理：DSH → 截断 → 播报。 */
+  /** 一条语音的完整处理：DSH → 清洗 → 截断 → 播报。 */
   async #handleOne(text) {
     const raw = await this.askDsh(text);
-    let reply = raw || "我收到了，但没想出怎么回答";
+    // 清洗在截断之前：Markdown 符号可能占掉大量字符预算，
+    // 先清掉才能把有限的字数留给真正要播的内容。
+    let reply = cleanForSpeech(raw) || "我收到了，但没想出怎么回答";
     if (reply.length > this.#config.maxReplyChars) {
       reply = reply.slice(0, this.#config.maxReplyChars) + "……先说这么多";
     }

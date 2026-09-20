@@ -460,6 +460,56 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
     }
 
     /**
+     * `xiaoai.settings.recommended()` → `{ patch }` 推荐配置。
+     *
+     * 为什么值得做：用户配好账号后面对一堆空字段（唤醒词/直接问/退出词/
+     * 忽略规则），不知道该填什么 —— 于是干脆留空，然后发现「音箱把所有话
+     * 都转走了」或者「说了没反应」。给一套经过实践的推荐值，一键填好，
+     * 比写十页文档有用。
+     *
+     * 只返回建议值，不直接写 —— 由客户端走 settings.update 应用，
+     * 这样用户能看到将要改动什么（revision 校验也照常生效）。
+     *
+     * @returns {Promise<{patch: object, notes: string[]}>}
+     */
+    async recommendedPreset() {
+      return {
+        patch: {
+          aiModeEnabled: true,
+          wakeUpKeywords: ["进入AI模式", "召唤助手", "打开助手"],
+          callAIKeywords: ["请", "帮我", "请问", "小爱助手"],
+          exitKeywords: ["退出", "再见", "不用了", "关闭助手"],
+          // 与小爱自身能力冲突的句子不要转走：点歌/调音量它自己做得更好，
+          // 我们的本地快速路径也接管了音量。
+          ignorePatterns: [
+            "^小爱同学$",
+            "^打开.*歌",
+            "^放.*歌",
+            "^来首.*",
+            "^换一首",
+          ],
+          exitKeepAliveAfter: 30,
+          onEnterAI: ["AI模式已开启"],
+          onExitAI: ["已退出AI模式"],
+          onAIAsking: ["让我想想"],
+          onAIProgress: ["还在处理，请稍等一下"],
+          onAIError: ["抱歉，出错了"],
+          onAIErrorNetwork: ["网络好像不太好，等一下再试试"],
+          onAIErrorAuth: ["小米账号可能需要重新登录，请在设置面板检查"],
+          onAIErrorTimeout: ["这个问题有点复杂，我还没想完，请再问一次"],
+          localCommandsEnabled: true,
+          maxReplyChars: 400,
+          pollIntervalMs: 4000,
+        },
+        notes: [
+          "唤醒词用于进入连续对话模式；直接问关键词则说了就答、不打断模式。",
+          "忽略规则挡住了点歌这类小爱自己更擅长的指令。",
+          "Agent 预设与模型保持跟随 Host，未包含在推荐值里。",
+        ],
+      };
+    }
+
+    /**
      * `xiaoai.speak({ text })` → `{ ok: true }`；直接让音箱念一段。
      *
      * @param {object} args `{ text }`。
@@ -853,6 +903,7 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
   applyRemote(Remote, XiaoaiController, "discoverSpeakers", "onboarding.discoverSpeakers");
   applyRemote(Remote, XiaoaiController, "onboardingApply", "onboarding.apply");
   applyRemote(Remote, XiaoaiController, "onboardingModels", "onboarding.models");
+  applyRemote(Remote, XiaoaiController, "recommendedPreset", "settings.recommended");
 
   return XiaoaiController;
 }
