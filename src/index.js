@@ -299,8 +299,14 @@ function buildSettingsSchema(z) {
     onAIAsking: z.array(z.string()).default([...DEFAULTS.onAIAsking]),
     /** 回答完毕的提示语。 */
     onAIReplied: z.array(z.string()).default([...DEFAULTS.onAIReplied]),
-    /** 出错时的提示语。 */
+    /** 出错时的提示语（分类未命中时的兜底）。 */
     onAIError: z.array(z.string()).default([...DEFAULTS.onAIError]),
+    /** 网络类错误提示（连接失败/断开）。 */
+    onAIErrorNetwork: z.array(z.string()).default([...DEFAULTS.onAIErrorNetwork]),
+    /** 鉴权类错误提示（401/403/token 过期）。 */
+    onAIErrorAuth: z.array(z.string()).default([...DEFAULTS.onAIErrorAuth]),
+    /** 超时类错误提示（aborted/timeout）。 */
+    onAIErrorTimeout: z.array(z.string()).default([...DEFAULTS.onAIErrorTimeout]),
     /** DSH 桥接端点（仅在无法用进程内 agent 时使用）。 */
     dshApiUrl: z.string().default(DEFAULTS.dshApiUrl),
     /** 桥接鉴权（敏感）。 */
