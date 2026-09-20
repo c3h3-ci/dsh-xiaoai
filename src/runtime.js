@@ -48,6 +48,8 @@ export const DEFAULTS = Object.freeze({
   wakeUpKeywords: [],
   exitKeywords: [],
   exitKeepAliveAfter: 30,
+  /** 本地快速路径：音量/时间/停止这类高频指令本机处理，不走 LLM。 */
+  localCommandsEnabled: true,
   // ── 提示语（空数组 = 不播报）──
   onEnterAI: ["AI模式已开启"],
   onExitAI: ["已退出AI模式"],
@@ -1131,6 +1133,15 @@ export class XiaoaiRuntime {
     }
 
     // action === "ask"
+    //
+    // 先试「本地快速路径」：音量、时间这类高频指令不必惊动 LLM。
+    // 实测走 DSH 需要 5-20 秒（轮询 + 推理），而这类指令本机 0.1 秒就能做 ——
+    // 用户说「声音小一点」等十几秒是很糟的体验。
+    if (await this.#tryLocalCommand(text)) {
+      this.#touchKeepAlive();
+      return false; // 本地已处理，不再交给 DSH
+    }
+
     this.#aiMode = "thinking";
     this.#patch({ aiMode: "thinking" });
 
@@ -1149,6 +1160,78 @@ export class XiaoaiRuntime {
 
     this.#touchKeepAlive();
     return true;
+  }
+
+  /**
+   * 本地快速路径：高频、确定性的指令直接本机执行，不经 LLM。
+   *
+   * 为什么值得做：语音助手最高频的几条指令（音量、时间、停止）都是
+   * 「本机零点几秒能做完」的事，走 DSH 却要 5-20 秒。用户说
+   * 「声音小一点」然后等十几秒，体验上的落差极大。
+   *
+   * 设计取舍：
+   *   · 只在明确命中时接管，**任一不确定就返回 false** 交给 DSH ——
+   *     宁可慢一点，也不要把「把客厅灯调到50%」误当成音量指令。
+   *   · 指令表用正则精确匹配（数字/相对词都可），不做模糊推断。
+   *
+   * @returns {Promise<boolean>} true = 已在本地处理完（调用方不要再问 DSH）
+   */
+  async #tryLocalCommand(text) {
+    if (!this.#config.localCommandsEnabled) return false;
+    const t = String(text ?? "").trim();
+    if (!t) return false;
+
+    // ── 音量：绝对（调到50 / 音量50）──
+    const absVol = t.match(/^(?:请|帮我)?(?:把)?(?:音量|声音|音量调|声音调)(?:调到|调成|设为|设成|调整到)?\s*(\d{1,3})\s*%?$/);
+    if (absVol) {
+      const want = Number(absVol[1]);
+      if (want >= 0 && want <= 100) {
+        const r = await this.#speaker?.setVolume(want);
+        const cur = r?.volume ?? want;
+        this.log(`🔊 [本地] 音量设为 ${cur}`);
+        await this.#speaker?.say(`音量已经调到${cur}`);
+        return true;
+      }
+      return false;
+    }
+
+    // ── 音量：相对（大声点/小一点/音量+10）──
+    const relWord = t.match(/^(?:请|帮我)?(?:把)?(?:声音|音量)?(大声|小声|大一点|小一点|大点|小点|调大|调小|调高|调低)/);
+    const relNum = t.match(/^(?:请|帮我)?(?:把)?(?:音量|声音)(?:调大|调高|\+|加)\s*(\d{1,3})/);
+    const relNumDown = t.match(/^(?:请|帮我)?(?:把)?(?:音量|声音)(?:调小|调低|-|减)\s*(\d{1,3})/);
+    if (relWord || relNum || relNumDown) {
+      let delta = 10;
+      if (relNum) delta = Number(relNum[1]) || 10;
+      else if (relNumDown) delta = -(Number(relNumDown[1]) || 10);
+      else if (/小|低/.test(relWord[1])) delta = -10;
+      const r = await this.#speaker?.adjustVolume(delta);
+      const cur = r?.volume ?? '?';
+      this.log(`🔊 [本地] 音量 ${delta > 0 ? '+' : ''}${delta} → ${cur}`);
+      await this.#speaker?.say(`音量${delta > 0 ? '已经调大' : '已经调小'}，现在是${cur}`);
+      return true;
+    }
+
+    // ── 当前时间 ──
+    if (/^(?:请|帮我)?(?:现在)?(?:几点|几点了|什么时间|报时|当前时间)$/.test(t)) {
+      const now = new Date();
+      const hh = now.getHours();
+      const mm = now.getMinutes();
+      const period = hh < 6 ? '凌晨' : hh < 12 ? '上午' : hh < 14 ? '中午' : hh < 18 ? '下午' : '晚上';
+      const h12 = hh % 12 === 0 ? 12 : hh % 12;
+      const line = `现在是${period}${h12}点${mm === 0 ? '整' : mm + '分'}`;
+      this.log(`🔊 [本地] ${line}`);
+      await this.#speaker?.say(line);
+      return true;
+    }
+
+    // ── 停止播放（"别说了"用暂停，避免把 TTS 也停掉导致后续无法播报）──
+    if (/^(?:请|帮我)?(?:先)?(?:别说了|安静|停一下|停止播放|暂停播放|停)($|吧|一下)/.test(t)) {
+      const r = await this.#speaker?.pause();
+      this.log(`🔊 [本地] 暂停播放 ok=${r?.ok}`);
+      return true;
+    }
+
+    return false;
   }
 
   // ───────────────────────── 生命周期 ─────────────────────────

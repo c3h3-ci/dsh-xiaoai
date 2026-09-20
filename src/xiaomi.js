@@ -297,6 +297,51 @@ export class XiaomiSpeaker {
     this.lastSpoken = safe;
     return safe;
   }
+
+  // ── 音箱本机控制（供「本地快速路径」用，不必走 LLM）──
+  //
+  // vendor 已提供 getVolume/setVolume（lib/vendor/mi-service-lite.js:486-496）。
+  // 注意 setVolume 内部 clamp(6,100)：传 0 会被抬到 6，与"静音"语义不符，
+  // 因此 0 单独映射到 1（最小可听下限）；真正静音应走 pause。
+
+  /** 读当前音量（0-100）。未连接或读不到时返回 null。 */
+  async getVolume() {
+    if (!this.#iot) return null;
+    try {
+      const v = await this.#iot.getVolume();
+      return typeof v === "number" && Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 设置音量（0-100）。返回 {ok, volume}。 */
+  async setVolume(volume) {
+    if (!this.#iot) throw new Error("未连接音箱（请先 connect()）");
+    const v = Math.max(0, Math.min(100, Math.round(Number(volume) || 0)));
+    const target = v === 0 ? 1 : v;
+    const ok = await this.#iot.setVolume(target);
+    return { ok: ok !== false, volume: target };
+  }
+
+  /** 相对调整音量（delta 正负），返回调整前后的值。 */
+  async adjustVolume(delta) {
+    const cur = (await this.getVolume()) ?? 50;
+    const next = Math.max(1, Math.min(100, cur + Number(delta || 0)));
+    const r = await this.setVolume(next);
+    return { ...r, from: cur };
+  }
+
+  /** 暂停播放。 */
+  async pause() {
+    if (!this.#iot) throw new Error("未连接音箱（请先 connect()）");
+    try {
+      await this.#iot.pause();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err?.message ?? err) };
+    }
+  }
 }
 
 /** 读取/写入 MiGPT 兼容的 .mi.json 凭据缓存。 */
