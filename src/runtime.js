@@ -1106,11 +1106,38 @@ export class XiaoaiRuntime {
   }
 
   /** 从 Host 的活 agent 表里取回刚建好的 agent 句柄（记在设备上下文上）。 */
+  /**
+   * 挂载 Agent 预设（幂等）。
+   *
+   * ⚠️ 为什么单独抽出来：预设的挂载原来只写在【路线 C（#viaAgentsCreate）的
+   *    setup 回调】里，但实际走的是【路线 B（#viaGateway）】（见 #ensureAgent
+   *    的路线优先级）—— setup 永不执行 → 预设从未挂载。
+   *    实测证据：配了 agentPreset='voice'，但会话的 system/message 仍是
+   *    默认的 "You are an AI agent powered by DeepSeek Harness."，
+   *    说明 persona 没被预设覆盖。
+   *    这与「语音约束没注入」是同一类问题（注入点选错路线）。
+   */
+  async #mountPreset(agentCtx, preset) {
+    const presets = this.#agentCtx?.agentPresets;
+    if (!presets || typeof presets.mount !== "function") return false;
+    try {
+      const resolved = await presets.resolve(preset || undefined);
+      if (!resolved?.id) return false;
+      await presets.mount(agentCtx, resolved.id);
+      this.log(`已挂载 Agent 预设: ${resolved.id}`);
+      return true;
+    } catch (err) {
+      this.log(`挂载 Agent 预设失败（忽略）: ${err?.message ?? err}`);
+      return false;
+    }
+  }
+
   async #attachAgent(spk, sessionId, cwd, preset) {
     const agents = this.#agentCtx?.agents;
     let agent = agents?.get?.(sessionId);
     if (agent) {
       spk.agent = agent;
+      await this.#mountPreset(agent.ctx ?? agent, preset);
       this.#installVoiceGuidance(agent.ctx ?? agent);
       return agent;
     }
@@ -1121,6 +1148,7 @@ export class XiaoaiRuntime {
       agent = adopted?.agent ?? adopted;
       if (agent) {
         spk.agent = agent;
+        await this.#mountPreset(agent.ctx ?? agent, preset);
         this.#installVoiceGuidance(agent.ctx ?? agent);
         return agent;
       }
@@ -1139,6 +1167,7 @@ export class XiaoaiRuntime {
       const agent = adopted?.agent ?? adopted;
       if (!agent) return null;
       spk.agent = agent;
+      await this.#mountPreset(agent.ctx ?? agent, preset);
       this.#installVoiceGuidance(agent.ctx ?? agent);   // 复用路径同样注入
       await this.#afterBind(spk, sessionId, this.#storedWorkspaceId(sessionId), sessionKeyFor(spk.did), cwd);
       return agent;
@@ -2127,6 +2156,33 @@ export class XiaoaiRuntime {
    * `while (gen === this.#generation)` 立即失败并退出，无需等它跑完一轮。
    */
   async stop() {
+    // ── 【2026-09-21 优化】优雅停止：先在处理的对话做完，再退 ──
+    //
+    // 实测问题：插件重启撞上用户对话时，正在处理的请求被直接掐断 ——
+    // 用户听到「让我想想」之后就再没下文（回答永远不来）。
+    //   13:08:24 用户说话 → 13:08:26 开始处理 → 13:08:33 插件重启 → 回答丢失
+    //
+    // 做法：给正在处理的设备一个宽限期（最多 GRACE_MS），等它把这一轮
+    // 走完（含 TTS 播报）再真正停下。超时则强制退出，避免"卡死式"关不掉。
+    // stop() 是重启路径的一部分，不能无限等 —— 否则 DSH 重启会挂住。
+    const responding = [...this.#speakers.values()].filter((sp) => sp.responding);
+    if (responding.length > 0) {
+      const GRACE_MS = 20000;
+      const names = responding.map((sp) => sp.name || sp.did).join("、");
+      this.log(`停止中：等待 ${names} 处理完当前对话（最多 ${GRACE_MS / 1000} 秒）…`);
+      const deadline = Date.now() + GRACE_MS;
+      while (Date.now() < deadline) {
+        if (![...this.#speakers.values()].some((sp) => sp.responding)) break;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const still = [...this.#speakers.values()].filter((sp) => sp.responding);
+      if (still.length > 0) {
+        this.log(`宽限期已到，仍有 ${still.length} 台在处理（强制停止）`);
+      } else {
+        this.log("当前对话已处理完，可以安全停止");
+      }
+    }
+
     this.#stopped = true;
     this.#generation += 1;   // 让在跑的循环立刻失效
     this.#wake();            // 打断睡眠
