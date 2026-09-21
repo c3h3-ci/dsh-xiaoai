@@ -182,6 +182,30 @@ export function cleanForSpeech(text) {
 }
 
 /** 从会话事件的任意载荷里抽取纯文本。 */
+/**
+ * 从对话记录的 `answers` 数组里挑出【小爱真正说的话】。
+ *
+ * 依据 MiGPT v4.2.0 的 `getMessages`（src/services/speaker/speaker.ts:294-305）：
+ *   answers[0].type 必须是 "TTS" 或 "LLM"，且 answers.length === 1
+ *   —— 播放音乐时会有 TTS + Audio 两个 answer，那种不算对话。
+ * 文本位置：answers[0].tts.text 或 answers[0].llm.text。
+ *
+ * @param {Array} answers 记录里的 answers 字段
+ * @returns {{text: string, type: string}} 提取结果（提取不到时 text 为空串）
+ */
+function extractAnswerText(answers) {
+  if (!Array.isArray(answers) || answers.length === 0) return { text: "", type: "" };
+  // 优先找 TTS / LLM 类型（MiGPT 的判定），但放宽 length 限制 ——
+  // 实测有记录带多个 answer（如 TTS + Audio），此时第一个 TTS 仍是有效回答。
+  const preferred = answers.find((a) => ["TTS", "LLM"].includes(String(a?.type ?? "")));
+  const pick = preferred ?? answers[0];
+  const text = String(
+    pick?.tts?.text ?? pick?.llm?.text ?? pick?.text ?? "",
+  ).trim();
+  return { text, type: String(pick?.type ?? "") };
+}
+
+/** 从会话事件的任意载荷里抽取纯文本。 */
 function extractText(node) {
   if (node == null) return "";
   if (typeof node === "string") return node;
