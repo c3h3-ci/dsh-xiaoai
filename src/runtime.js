@@ -1044,6 +1044,83 @@ export class XiaoaiRuntime {
     return String(list[Math.floor(Math.random() * list.length)]);
   }
 
+  /**
+   * 列出可供 UI 下拉选择的宿主选项（工作区 / Agent 预设 / 模型）。
+   *
+   * 为什么需要：设置面板里 workspace / agentPreset / provider+model 三个字段
+   * 让用户手填是不现实的 —— 路径要写对、预设 id 要写对、模型名要写对，
+   * 任何一处写错都表现为"会话建不起来"，且错误信息对用户毫无指向性。
+   * 这里从宿主服务把可选项列出来，UI 直接渲染成下拉。
+   *
+   * 容错：任一来源不可用只跳过该项（返回空数组），不抛错 ——
+   * 下拉为空时 UI 退化为手填，仍可用。
+   *
+   * @returns {Promise<{workspaces: Array, presets: Array, models: Array, defaultModel: object|null}>}
+   */
+  async listHostOptions() {
+    const out = { workspaces: [], presets: [], models: [], defaultModel: null };
+
+    // ── 工作区（workspaceRegistry.list()）──
+    try {
+      // 只能用 #agentCtx：#host 是未声明的私有字段，this.#host 会直接抛
+      // TypeError（?. 保护不了私有字段自身的读取），被 catch 吞掉后永远返回空数组。
+      const reg = this.#agentCtx?.workspaceRegistry;
+      if (reg && typeof reg.list === "function") {
+        const raw = await reg.list();
+        const arr = Array.isArray(raw) ? raw : (raw?.items ?? []);
+        out.workspaces = arr.map((w) => ({
+          id: String(w.id ?? w.workspaceId ?? ""),
+          path: String(w.path ?? w.cwd ?? w.root ?? ""),
+          name: String(w.name ?? w.title ?? ""),
+        })).filter((w) => w.id || w.path);
+      }
+    } catch (err) {
+      this.log(`列工作区失败（忽略）: ${err?.message ?? err}`);
+    }
+
+    // ── Agent 预设（ctx.agentPresets.list()）──
+    try {
+      const presets = this.#agentCtx?.agentPresets;
+      if (presets && typeof presets.list === "function") {
+        const raw = await presets.list();
+        const arr = Array.isArray(raw) ? raw : (raw?.items ?? []);
+        out.presets = arr.map((p) => ({
+          id: String(p.id ?? ""),
+          name: String(p.name ?? p.title ?? p.id ?? ""),
+          description: String(p.description ?? ""),
+        })).filter((p) => p.id);
+      }
+    } catch (err) {
+      this.log(`列预设失败（忽略）: ${err?.message ?? err}`);
+    }
+
+    // ── 模型（agentDefaultModel 的当前选择；完整清单由 DSH 的模型服务提供）──
+    try {
+      const dm = this.#agentCtx?.agentDefaultModel;
+      const sel = dm?.currentSelection?.();
+      if (sel?.provider && sel?.model) {
+        out.defaultModel = { provider: String(sel.provider), model: String(sel.model) };
+        out.models.push({ provider: String(sel.provider), model: String(sel.model), isDefault: true });
+      }
+      // 若服务能列出全部模型，一并取来
+      if (typeof dm?.list === "function") {
+        const raw = await dm.list();
+        const arr = Array.isArray(raw) ? raw : (raw?.items ?? []);
+        for (const m of arr) {
+          const provider = String(m.provider ?? m.providerId ?? "");
+          const model = String(m.model ?? m.modelId ?? m.id ?? "");
+          if (!provider || !model) continue;
+          if (out.models.some((x) => x.provider === provider && x.model === model)) continue;
+          out.models.push({ provider, model, isDefault: false });
+        }
+      }
+    } catch (err) {
+      this.log(`列模型失败（忽略）: ${err?.message ?? err}`);
+    }
+
+    return out;
+  }
+
   /** 播报一条提示语（失败只记日志，不影响主流程）。 */
   async #sayPhrase(phrases, label) {
     const text = this.#pickPhrase(phrases);

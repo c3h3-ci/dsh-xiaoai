@@ -891,6 +891,33 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
     }
 
     /**
+     * `xiaoai.hostOptions()` → `{ workspaces, presets, models, defaultModel }`。
+     *
+     * 给设置面板的下拉用：workspace / agentPreset / provider+model 让用户手填
+     * 是不现实的（路径、预设 id、模型名任一处写错，表现都是"会话建不起来"，
+     * 且错误信息对用户毫无指向性）。这里把宿主的可选项列出来。
+     *
+     * 无参方法 —— 客户端必须把它放进 NO_ARG_METHODS，
+     * 否则网关会回 `unexpected "args"`（payload.args 必须是 {}）。
+     *
+     * @returns {Promise<{workspaces: Array<object>, presets: Array<object>,
+     *                    models: Array<object>, defaultModel: object|null}>}
+     */
+    async hostOptions() {
+      const endpoint = "xiaoai.hostOptions";
+      try {
+        // runtime 是本模块的模块级变量（见 status 方法：runtime.status）。
+        // 运行时未就绪时返回空集，让 UI 退化为手填输入框，而不是整页报错。
+        if (!runtime || typeof runtime.listHostOptions !== "function") {
+          return { workspaces: [], presets: [], models: [], defaultModel: null };
+        }
+        return await runtime.listHostOptions();
+      } catch (err) {
+        throw fail(err, endpoint);
+      }
+    }
+
+    /**
      * `xiaoai.onboarding.models()` —— 型号兼容表。
      *
      * 给 UI 两个用途：手动配置时的型号下拉、以及"这个型号行不行"的说明。
@@ -940,6 +967,7 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
   applyRemote(Remote, XiaoaiController, "test");
   applyRemote(Remote, XiaoaiController, "speak");
   applyRemote(Remote, XiaoaiController, "logs");
+  applyRemote(Remote, XiaoaiController, "hostOptions", "hostOptions");
   // ── 首次接入向导（onboarding）──
   applyRemote(Remote, XiaoaiController, "importScan", "onboarding.importScan");
   applyRemote(Remote, XiaoaiController, "login", "onboarding.login");
@@ -987,6 +1015,7 @@ export const RPC_METHODS = Object.freeze({
   "xiaoai.test": "test",
   "xiaoai.speak": "speak",
   "xiaoai.logs": "logs",
+  "xiaoai.hostOptions": "hostOptions",
   // ── 首次接入向导（见文件头 onboarding 说明）──
   "xiaoai.onboarding.importScan": "importScan",
   "xiaoai.onboarding.login": "login",

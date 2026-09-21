@@ -624,6 +624,383 @@ const RPC_NS = "xiaoai";
 @media (prefers-reduced-motion: reduce) {
 	.xiaoai-spinner { animation-duration: 2s; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   分组折叠（§2.1 / §3）
+   ══════════════════════════════════════════════════════════════ */
+.xiaoai-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.xiaoai-group {
+	background: var(--dsw-alias-bg-layer-1, transparent);
+	border: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-l1, currentColor));
+	border-radius: 12px;
+	overflow: hidden;
+	transition: border-color .15s var(--ds-ease-in-out, ease);
+}
+.xiaoai-group[open] {
+	border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2, currentColor));
+}
+/* 有未保存修改的组：左边一条品牌色，收起时也看得见 */
+.xiaoai-group-dirty {
+	border-left: 3px solid var(--dsw-alias-brand-primary);
+}
+.xiaoai-group-summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 14px;
+	cursor: pointer;
+	list-style: none;
+	user-select: none;
+	transition: background .15s var(--ds-ease-in-out, ease);
+}
+.xiaoai-group-summary::-webkit-details-marker { display: none; }
+.xiaoai-group-summary:hover {
+	background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-2, transparent));
+}
+.xiaoai-group-summary:focus-visible {
+	outline: 2px solid var(--dsw-alias-brand-primary);
+	outline-offset: -2px;
+}
+/* 三角指示：收起 ▶ / 展开 ▼ —— 纯 CSS，跟着 [open] 自动翻转 */
+.xiaoai-group-caret {
+	flex: none;
+	width: 0;
+	height: 0;
+	border-style: solid;
+	border-width: 5px 0 5px 7px;
+	border-color: transparent transparent transparent var(--dsw-alias-label-tertiary);
+	transition: transform .15s var(--ds-ease-in-out, ease);
+}
+.xiaoai-group[open] .xiaoai-group-caret {
+	transform: rotate(90deg);
+}
+.xiaoai-group-headtext {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.xiaoai-group-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 20px;
+	color: var(--dsw-alias-label-primary);
+}
+/* ⚠️ 脏点：折叠分组的标题上必须能看见 —— 否则折叠会隐藏脏状态（§6.4） */
+.xiaoai-group-dot {
+	width: 7px;
+	height: 7px;
+	flex: none;
+	border-radius: 50%;
+	background: var(--dsw-alias-brand-primary);
+}
+.xiaoai-group-desc {
+	font-size: 12px;
+	line-height: 16px;
+	color: var(--dsw-alias-label-tertiary);
+}
+.xiaoai-group-note {
+	margin: 0;
+	padding: 0 14px 8px 32px;
+	font-size: 12px;
+	line-height: 16px;
+	color: var(--dsw-alias-label-tertiary);
+}
+.xiaoai-group-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 4px 14px 14px;
+	border-top: 1px solid var(--dsw-alias-border-l1, transparent);
+}
+
+/* ── 三列字段行（§3）─────────────────────────────────────── */
+.xiaoai-row {
+	display: grid;
+	grid-template-columns: 14em minmax(0, 1fr);
+	column-gap: 14px;
+	row-gap: 4px;
+	align-items: start;
+	padding: 8px 0;
+}
+.xiaoai-row-label {
+	padding-top: 6px;
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--dsw-alias-label-secondary, inherit);
+	overflow-wrap: anywhere;
+}
+.xiaoai-row-req { color: var(--dsw-alias-state-error-primary, #f85149); margin-left: 3px; }
+.xiaoai-row-control {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.xiaoai-row-hint {
+	grid-column: 2;
+	margin: 0;
+	font-size: 12px;
+	line-height: 17px;
+	color: var(--dsw-alias-label-tertiary);
+}
+.xiaoai-row-error {
+	grid-column: 2;
+	margin: 0;
+	font-size: 12px;
+	line-height: 17px;
+	color: #d29922;
+}
+.xiaoai-warn-inline { grid-column: 1 / -1; color: #d29922; }
+.xiaoai-control-pair {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	width: 100%;
+	min-width: 0;
+}
+
+/* ── 小节标题（提示语组内分两段）───────────────────────── */
+.xiaoai-subheading {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin: 10px 0 0;
+	padding-bottom: 4px;
+	border-bottom: 1px dashed var(--dsw-alias-border-l1, transparent);
+}
+.xiaoai-subheading h4 {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--dsw-alias-label-primary);
+}
+
+/* ── 下拉 / 开关 ─────────────────────────────────────────── */
+.xiaoai-select {
+	flex: 1 1 12em;
+	min-width: 0;
+	padding: 6px 10px;
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-bg-layer-2, transparent);
+	border: 1px solid var(--dsw-alias-border-l2, currentColor);
+	border-radius: 8px;
+	cursor: pointer;
+}
+.xiaoai-select:focus-visible {
+	border-color: var(--dsw-alias-brand-primary);
+	outline: none;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+}
+.xiaoai-switch {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+}
+.xiaoai-switch input[type="checkbox"] {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+.xiaoai-switch-track {
+	position: relative;
+	flex: none;
+	width: 34px;
+	height: 20px;
+	border-radius: 999px;
+	background: var(--dsw-alias-border-l2, #6b7280);
+	transition: background .15s var(--ds-ease-in-out, ease);
+}
+.xiaoai-switch-thumb {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fff;
+	transition: transform .15s var(--ds-ease-in-out, ease);
+}
+.xiaoai-switch input:checked + .xiaoai-switch-track {
+	background: var(--dsw-alias-brand-primary);
+}
+.xiaoai-switch input:checked + .xiaoai-switch-track .xiaoai-switch-thumb {
+	transform: translateX(14px);
+}
+.xiaoai-switch input:focus-visible + .xiaoai-switch-track {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent);
+}
+.xiaoai-switch input:disabled + .xiaoai-switch-track {
+	opacity: .5;
+	cursor: not-allowed;
+}
+.xiaoai-switch-text {
+	font-size: 12px;
+	color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── 标签式数组输入（chip）───────────────────────────────── */
+.xiaoai-tags {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 100%;
+	min-width: 0;
+}
+.xiaoai-tags-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.xiaoai-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 4px 3px 9px;
+	font-size: 12px;
+	line-height: 18px;
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2, transparent));
+	border: 1px solid var(--dsw-alias-border-l2, transparent);
+	border-radius: 999px;
+	max-width: 100%;
+}
+.xiaoai-chip-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.xiaoai-chip-del {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	font-size: 13px;
+	line-height: 1;
+	color: var(--dsw-alias-label-tertiary);
+	background: transparent;
+	border: none;
+	border-radius: 50%;
+	cursor: pointer;
+}
+.xiaoai-chip-del:hover {
+	color: var(--dsw-alias-label-primary-inverted, #fff);
+	background: var(--dsw-alias-state-error-primary, #f85149);
+}
+.xiaoai-chip-del:focus-visible {
+	outline: 2px solid var(--dsw-alias-brand-primary);
+	outline-offset: 1px;
+}
+/* 空数组的占位提示 —— 必须是文案而不是空白（§3） */
+.xiaoai-chip-empty {
+	font-size: 12px;
+	line-height: 18px;
+	color: var(--dsw-alias-label-tertiary);
+	font-style: italic;
+}
+.xiaoai-tags-input-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.xiaoai-tags-input { flex: 1 1 auto; min-width: 0; }
+.xiaoai-tags-tip {
+	flex: none;
+	font-size: 11px;
+	color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── 问号帮助 tooltip（§6.6）────────────────────────────── */
+.xiaoai-help { position: relative; display: inline-flex; }
+.xiaoai-help-button {
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	font-size: 11px;
+	line-height: 1;
+	color: var(--dsw-alias-label-tertiary);
+	background: transparent;
+	border: 1px solid var(--dsw-alias-border-l2, currentColor);
+	border-radius: 50%;
+	cursor: help;
+}
+.xiaoai-help-tip {
+	position: absolute;
+	bottom: calc(100% + 6px);
+	left: 0;
+	z-index: 30;
+	width: max-content;
+	max-width: 300px;
+	padding: 8px 10px;
+	font-size: 12px;
+	line-height: 17px;
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-bg-layer-4, var(--dsw-alias-bg-layer-2, #222));
+	border: 1px solid var(--dsw-alias-border-l3, currentColor);
+	border-radius: 8px;
+	box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity .12s var(--ds-ease-in-out, ease);
+}
+.xiaoai-help-button:hover + .xiaoai-help-tip,
+.xiaoai-help-button:focus-visible + .xiaoai-help-tip,
+.xiaoai-help-tip:hover {
+	opacity: 1;
+	visibility: visible;
+}
+
+/* ── 操作栏（§6.1）─────────────────────────────────────── */
+.xiaoai-actionbar {
+	position: sticky;
+	bottom: 0;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px 14px;
+	background: var(--dsw-alias-bg-layer-1, transparent);
+	border: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-l1, currentColor));
+	border-radius: 12px;
+	backdrop-filter: blur(6px);
+}
+.xiaoai-dirty-note {
+	margin: 0;
+	font-size: 12px;
+	line-height: 18px;
+	color: #d29922;
+}
+.xiaoai-actions-gap { flex: 1 1 auto; }
+.xiaoai-actions-tools {
+	padding-top: 10px;
+	border-top: 1px solid var(--dsw-alias-border-l1, transparent);
+	align-items: center;
+}
+.xiaoai-actions-lead {
+	font-size: 12px;
+	color: var(--dsw-alias-label-tertiary);
+}
+
+@media (max-width: 640px) {
+	.xiaoai-row { grid-template-columns: minmax(0, 1fr); }
+	.xiaoai-row-hint, .xiaoai-row-error { grid-column: 1; }
+	.xiaoai-row-label { padding-top: 0; }
+}
 `;
 
 		/**
@@ -673,18 +1050,59 @@ const RPC_NS = "xiaoai";
 			return value === undefined || value === null || String(value).trim() === "";
 		}
 
-		/** 把逗号分隔文本解析成去空白的数组；空文本得到空数组。 */
+		/**
+		 * 把「逗号分隔文本」或「数组」统一解析成去空白的字符串数组。
+		 *
+		 * ⚠️ **必须与 formatList 同步修改**（设计师标注的坑）：
+		 * draft 侧的数组字段现在是**真数组**（TagInput 直接读写），
+		 * buildPatch 仍要过一遍这里做最终清洗。若这里只认字符串，
+		 * `String(["a","b"])` → `"a,b"` → 切回 `["a","b"]` 看似正常，
+		 * 但元素里**本身含逗号**的值（提示语里很常见）会被切碎。
+		 * 因此数组一律原样返回，不经过字符串往返。
+		 */
 		function parseList(text) {
+			if (Array.isArray(text)) return text.map((item) => String(item).trim()).filter((item) => item !== "");
 			if (isBlank(text)) return [];
 			return String(text)
-				.split(",")
+				.split(/[,，]/)
 				.map((part) => part.trim())
 				.filter((part) => part !== "");
 		}
 
-		/** 数组渲染回逗号分隔文本。 */
+		/**
+		 * 数组渲染回逗号分隔文本。
+		 *
+		 * ⚠️ 现在只用于**只读展示**（如摘要行）。draft 里**不要**再调它 ——
+		 * 数组字段在 draft 中保持真数组，一旦写成字符串，
+		 * TagInput 的「回车加一项」就会往字符串上追加，保存即丢数据。
+		 * （这条就是设计师在 §8.3-2 标注的「双重格式陷阱」。）
+		 */
 		function formatList(value) {
 			return Array.isArray(value) ? value.join(", ") : "";
+		}
+
+		/**
+		 * 把用户粘贴/输入的文本拆成待添加的多个条目。
+		 *
+		 * 支持半角逗号、全角逗号、顿号与换行 —— 用户从文档里复制关键词时
+		 * 这几种分隔符混用是常态，只认半角会让整串变成一个巨大的条目。
+		 */
+		function splitEntryText(text) {
+			return String(text === undefined || text === null ? "" : text)
+				.split(/[,，、\n\r\t]/)
+				.map((part) => part.trim())
+				.filter((part) => part !== "");
+		}
+
+		/** 追加条目（去重，保持原有顺序）。 */
+		function appendEntries(list, additions) {
+			const out = Array.isArray(list) ? list.slice() : [];
+			for (const item of additions) {
+				const text = String(item).trim();
+				if (text === "") continue;
+				if (out.indexOf(text) === -1) out.push(text);
+			}
+			return out;
 		}
 
 		/** 相对时间：刚刚 / N 秒前 / N 分钟前 / N 小时前。 */
@@ -770,61 +1188,261 @@ const RPC_NS = "xiaoai";
 
 		//#region 设置归一化
 
-		/** 契约 §2 的默认值，用于服务端未返回字段时兜底。 */
+		/**
+		 * 契约 §2 的默认值 —— 与 `src/runtime.js:21-70` 的 DEFAULTS 逐项对齐。
+		 *
+		 * ⚠️ 这里必须覆盖 `buildSettingsSchema`（src/index.js:251-340）的**全部 38 个字段**。
+		 * 少一项的后果不是报错，而是：服务端某次没返回该字段 → UI 显示空 →
+		 * 用户一保存就把空值写回去（数组字段尤其致命：整个列表被清空）。
+		 */
 		const SETTING_DEFAULTS = {
+			// ── 接入 ──
 			enabled: true,
 			userId: "",
 			password: "",
 			did: "",
+			deviceModel: "",
+			ttsCommand: "",
+			wakeUpCommand: "",
+			// ── 行为 ──
 			pollIntervalMs: 4000,
+			replyTimeoutMs: 240000,
 			maxReplyChars: 400,
 			triggerKeywords: [],
-			ignorePatterns: ["^小爱同学$"]
+			ignorePatterns: ["^小爱同学$"],
+			// ── 音箱侧：AI 模式 ──
+			aiModeEnabled: true,
+			callAIKeywords: [],
+			wakeUpKeywords: [],
+			exitKeywords: [],
+			exitKeepAliveAfter: 30,
+			localCommandsEnabled: true,
+			// ── 提示语（空数组 = 不播报）──
+			onEnterAI: ["AI模式已开启"],
+			onExitAI: ["已退出AI模式"],
+			onAIAsking: ["让我想想"],
+			onAIReplied: [],
+			onAIProgress: ["还在处理，请稍等一下"],
+			progressAfterSeconds: 35,
+			historyLimit: 20,
+			onAIError: ["抱歉，出错了"],
+			onAIErrorNetwork: ["网络好像不太好，等一下再试试"],
+			onAIErrorAuth: ["小米账号可能需要重新登录，请在设置面板检查"],
+			onAIErrorTimeout: ["这个问题有点复杂，我还没想完，请再问一次"],
+			// ── 桥接 / 日志 ──
+			dshApiUrl: "http://127.0.0.1:3082/api/session",
+			dshApiToken: "",
+			verboseLog: false,
+			// ── 会话绑定 ──
+			workspace: "",
+			agentPreset: "",
+			provider: "",
+			model: "",
+			sessionReuse: true
 		};
 
-		/** 把 settings.get 的值对象补全成 UI 需要的完整形状。 */
+		/**
+		 * 数值字段的钳制规则 —— 单点定义，UI 提示与 buildPatch 共用同一份，
+		 * 避免「UI 说最小 2000、实际按 3000 钳」这种前后不一致。
+		 */
+		const NUMBER_RULES = {
+			pollIntervalMs: { min: 2000, def: 4000, unit: "毫秒", label: "轮询间隔" },
+			replyTimeoutMs: { min: 1000, def: 240000, unit: "毫秒", label: "回复等待上限" },
+			maxReplyChars: { min: 1, def: 400, unit: "字", label: "回复字数上限" },
+			exitKeepAliveAfter: { min: 5, def: 30, unit: "秒", label: "静默退出时长" },
+			progressAfterSeconds: { min: 10, def: 35, unit: "秒", label: "进度播报阈值" },
+			historyLimit: { min: 1, def: 20, unit: "轮", label: "历史保留条数" }
+		};
+
+		/**
+		 * 数组字段清单（9 个 + 触发词/忽略规则 = 11 个）。
+		 * 这些字段的 draft 表示**必须是真数组** —— TagInput 直接读写数组。
+		 *
+		 * ⚠️ 历史坑：早期实现把 draft 里的数组存成逗号分隔字符串
+		 * （`formatList`），`buildPatch` 再 `parseList` 回来。改成 TagInput 后
+		 * 若只改一处，`parseList(数组)` 会走 `String(数组)` 分支，
+		 * 把 `["a","b"]` 变成 `["a,b"]` —— **保存即丢数据**。
+		 * 现在只在 `parseList` 里做了「已是数组就原样返回」的兼容，
+		 * 但 draft 侧仍必须是数组，两处已同步。
+		 */
+		const LIST_FIELDS = [
+			"triggerKeywords",
+			"ignorePatterns",
+			"callAIKeywords",
+			"wakeUpKeywords",
+			"exitKeywords",
+			"onEnterAI",
+			"onExitAI",
+			"onAIAsking",
+			"onAIReplied",
+			"onAIProgress",
+			"onAIError",
+			"onAIErrorNetwork",
+			"onAIErrorAuth",
+			"onAIErrorTimeout"
+		];
+
+		/** 布尔字段清单（draft 里保持真布尔）。 */
+		const BOOL_FIELDS = [
+			"enabled",
+			"aiModeEnabled",
+			"localCommandsEnabled",
+			"verboseLog",
+			"sessionReuse"
+		];
+
+		/** 字符串字段清单。 */
+		const STRING_FIELDS = [
+			"userId",
+			"password",
+			"did",
+			"deviceModel",
+			"ttsCommand",
+			"wakeUpCommand",
+			"dshApiUrl",
+			"dshApiToken",
+			"workspace",
+			"agentPreset",
+			"provider",
+			"model"
+		];
+
+		/**
+		 * 把 settings.get 的值对象补全成 UI 需要的完整形状。
+		 *
+		 * 三处调用点（初次加载 / 保存后回填 / 推荐配置）**必须**共用这一个函数 ——
+		 * 早期实现里保存后回填是就地拼装的（`{...values, password: …, triggerKeywords: formatList(…)}`），
+		 * 扩字段时三处行为会漂移，是已知的重复。
+		 */
 		function normalizeSettings(values) {
 			const source = values && typeof values === "object" ? values : {};
-			return {
-				enabled: source.enabled === undefined ? SETTING_DEFAULTS.enabled : Boolean(source.enabled),
-				userId: isBlank(source.userId) ? SETTING_DEFAULTS.userId : String(source.userId),
-				password: isBlank(source.password) ? SETTING_DEFAULTS.password : String(source.password),
-				did: isBlank(source.did) ? SETTING_DEFAULTS.did : String(source.did),
-				pollIntervalMs:
-					typeof source.pollIntervalMs === "number"
-						? source.pollIntervalMs
-						: SETTING_DEFAULTS.pollIntervalMs,
-				maxReplyChars:
-					typeof source.maxReplyChars === "number"
-						? source.maxReplyChars
-						: SETTING_DEFAULTS.maxReplyChars,
-				triggerKeywords: Array.isArray(source.triggerKeywords)
-					? source.triggerKeywords
-					: SETTING_DEFAULTS.triggerKeywords,
-				ignorePatterns: Array.isArray(source.ignorePatterns)
-					? source.ignorePatterns
-					: SETTING_DEFAULTS.ignorePatterns
-			};
+			const out = {};
+
+			for (const key of STRING_FIELDS) {
+				const raw = source[key];
+				out[key] = raw === undefined || raw === null ? SETTING_DEFAULTS[key] : String(raw);
+			}
+
+			for (const key of BOOL_FIELDS) {
+				out[key] =
+					source[key] === undefined || source[key] === null
+						? SETTING_DEFAULTS[key]
+						: Boolean(source[key]);
+			}
+
+			for (const key of Object.keys(NUMBER_RULES)) {
+				const raw = source[key];
+				out[key] = typeof raw === "number" && Number.isFinite(raw) ? raw : SETTING_DEFAULTS[key];
+			}
+
+			for (const key of LIST_FIELDS) {
+				const raw = source[key];
+				if (Array.isArray(raw)) {
+					out[key] = raw.map((item) => String(item));
+				} else if (typeof raw === "string" && raw.trim() !== "") {
+					// 服务端理论上只会返回数组；这里兼容手工写入的字符串，
+					// 否则一个「a, b」会被当成单元素数组。
+					out[key] = parseList(raw);
+				} else {
+					out[key] = SETTING_DEFAULTS[key].slice();
+				}
+			}
+
+			return out;
 		}
 
 		/**
 		 * 由「草稿」构造 settings.update 的 patch（契约 §4）。
-		 * 数字字段做范围钳制，列表字段做逗号切分。
+		 *
+		 * ⚠️ 发**全量** patch，不是只发改动字段 —— `settings.update` 走的是
+		 * merge 语义（src/rpc.js:401-405），发全量是安全的；只发脏字段会把
+		 * 「字段缺失 = 用默认值」和「字段缺失 = 不修改」两种语义搅在一起。
+		 *
+		 * 数字字段做钳制；钳制的具体结果同时会由 `clampNumberField` 在**行内**
+		 * 提前告诉用户，不再静默改数（见 §6.3）。
 		 */
 		function buildPatch(draft) {
-			const patch = {
-				enabled: Boolean(draft.enabled),
-				userId: String(draft.userId || "").trim(),
-				password: String(draft.password || ""),
-				did: String(draft.did || "").trim(),
-				triggerKeywords: parseList(draft.triggerKeywords),
-				ignorePatterns: parseList(draft.ignorePatterns)
-			};
-			const poll = Number(draft.pollIntervalMs);
-			patch.pollIntervalMs = Number.isFinite(poll) && poll >= 2000 ? Math.floor(poll) : 2000;
-			const maxChars = Number(draft.maxReplyChars);
-			patch.maxReplyChars = Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : 400;
+			const patch = {};
+			for (const key of STRING_FIELDS) {
+				patch[key] = String(draft[key] === undefined || draft[key] === null ? "" : draft[key]);
+			}
+			for (const key of BOOL_FIELDS) {
+				patch[key] = Boolean(draft[key]);
+			}
+			for (const key of Object.keys(NUMBER_RULES)) {
+				const rule = NUMBER_RULES[key];
+				const value = Number(draft[key]);
+				// 非数字 → 默认值；低于下限 → **钳到下限**（不是默认值）。
+				// 保留原实现的钳制语义：用户填 500 保存后回读是 2000，
+				// 而不是被悄悄改成 4000 —— 行内提示说的也是「已按 2000 处理」，
+				// 两处必须一致，否则提示与落盘值对不上。
+				if (!Number.isFinite(value)) patch[key] = rule.def;
+				else if (value < rule.min) patch[key] = rule.min;
+				else patch[key] = Math.floor(value);
+			}
+			for (const key of LIST_FIELDS) {
+				patch[key] = parseList(draft[key]);
+			}
 			return patch;
+		}
+
+		/**
+		 * 单个数值字段是否会被钳制；返回 null 表示无需提示。
+		 * UI 用它渲染行内黄字（「最小 2000 毫秒，已按 2000 处理」）。
+		 */
+		function clampNumberField(field, rawValue) {
+			const rule = NUMBER_RULES[field];
+			if (!rule) return null;
+			const value = Number(rawValue);
+			if (!Number.isFinite(value)) {
+				return { text: "请输入数字，当前按默认值 " + rule.def + " " + rule.unit + " 处理", value: rule.def };
+			}
+			if (value < rule.min) {
+				return { text: "最小 " + rule.min + " " + rule.unit + "，已按 " + rule.min + " 处理", value: rule.min };
+			}
+			return null;
+		}
+
+		/**
+		 * 比较草稿与基线，返回有差异的字段名数组。
+		 *
+		 * 数组字段不能用 `!==` 比 —— `normalizeSettings` 每次都建新数组，
+		 * 引用永远不等，会把「没改」误判成「改了」。所以逐项比较。
+		 */
+		function computeDirtyKeys(draft, baseline) {
+			if (!draft || !baseline) return [];
+			const keys = [];
+			for (const key of Object.keys(SETTING_DEFAULTS)) {
+				const a = draft[key];
+				const b = baseline[key];
+				if (Array.isArray(a) || Array.isArray(b)) {
+					const left = Array.isArray(a) ? a : [];
+					const right = Array.isArray(b) ? b : [];
+					if (left.length !== right.length) {
+						keys.push(key);
+						continue;
+					}
+					let same = true;
+					for (let i = 0; i < left.length; i += 1) {
+						if (String(left[i]) !== String(right[i])) {
+							same = false;
+							break;
+						}
+					}
+					if (!same) keys.push(key);
+					continue;
+				}
+				if (typeof a === "boolean" || typeof b === "boolean") {
+					if (Boolean(a) !== Boolean(b)) keys.push(key);
+					continue;
+				}
+				if (typeof a === "number" || typeof b === "number") {
+					if (Number(a) !== Number(b)) keys.push(key);
+					continue;
+				}
+				if (String(a === undefined ? "" : a) !== String(b === undefined ? "" : b)) keys.push(key);
+			}
+			return keys;
 		}
 
 		/**
@@ -932,6 +1550,338 @@ const RPC_NS = "xiaoai";
 				h("span", { className: "xiaoai-info-value" }, value)
 			);
 		}
+
+		//#region 表单原子（分组 / 三列行 / 下拉 / 开关 / 标签输入）
+		//
+		// 这一组是为了「补字段 + 分组」新加的。设计约束见
+		// docs/research/ui-redesign.md §3 与 §6。
+		//
+		// 为什么用 <details> 而不是页内 tab：
+		//   settings.section 契约本身就是「一整页 + 外壳导航」
+		//   （slots.d.ts:67-78 "The shell owns modal visibility and navigation"），
+		//   再套一层 tab 会变成「点导航 → 再点 tab」的两级操作。
+		//   <details>/<summary> 是原生语义，键盘与读屏零成本支持。
+
+		/** 折叠状态的 localStorage key。 */
+		const GROUP_STORAGE_KEY = "dsh-xiaoai.settings.groups";
+
+		/** 默认展开的分组 —— ①会话与模型 是用户抱怨缺失的，必须第一眼可见。 */
+		const DEFAULT_OPEN_GROUPS = ["session", "access"];
+
+		/**
+		 * 读取已展开分组集合。
+		 *
+		 * 必须持久化：XiaoaiSection 每次切导航都会重新挂载，React.useState
+		 * 不跨挂载存活 —— 不存的话用户每次进设置都要重新展开。
+		 *
+		 * 无痕模式 / 禁用存储时 localStorage 会抛异常，因此 try/catch 兜底回默认。
+		 */
+		function readOpenGroups() {
+			try {
+				const raw = localStorage.getItem(GROUP_STORAGE_KEY);
+				if (raw === null) return new Set(DEFAULT_OPEN_GROUPS);
+				const parsed = JSON.parse(raw);
+				return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set(DEFAULT_OPEN_GROUPS);
+			} catch {
+				return new Set(DEFAULT_OPEN_GROUPS);
+			}
+		}
+
+		/** 写入已展开分组集合（失败静默：存储不可用不该影响设置面板可用性）。 */
+		function writeOpenGroups(set) {
+			try {
+				localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify([...set]));
+			} catch {
+				/* 无痕模式等场景：折叠状态不持久化，但面板照常工作。 */
+			}
+		}
+
+		/**
+		 * 可折叠分组。
+		 *
+		 * @param options.group  { id, title, desc, defaultOpen, badge }
+		 * @param options.dirty  组内是否有未保存修改 → 标题上打脏点
+		 * @param options.onToggle 用户展开/收起时回调（同步到 localStorage）
+		 *
+		 * ⚠️ 脏点（§6.4）是**最容易做错**的一点：折叠会隐藏脏状态，
+		 * 用户在折叠的组里改了东西却看不到，保存后才发现「怎么多了个改动」。
+		 * 所以只要组内任一字段脏，标题右侧必须出现圆点 + 无障碍文案。
+		 *
+		 * ⚠️ 受控 <details open> 的取舍（§8.3-7）：`open` 属性变化**不触发**
+		 * toggle 事件，而用户点击会。这里只在挂载那一刻用 defaultOpen 语义
+		 * （open 属性），之后**不**在每次 render 强行回写 ——
+		 * 回写会让展开动画抖动。
+		 */
+		function CollapsibleGroup(options) {
+			const group = options.group;
+			const dirty = Boolean(options.dirty);
+			const titleId = "xiaoai-group-" + group.id;
+			const summaryChildren = [
+				h(
+					"span",
+					{ className: "xiaoai-group-title", id: titleId, key: "title" },
+					group.title,
+					dirty
+						? h("span", {
+								className: "xiaoai-group-dot",
+								key: "dot",
+								title: "这个分组里有未保存的修改",
+								"aria-hidden": "true"
+							})
+						: null
+				),
+				group.desc ? h("span", { className: "xiaoai-group-desc", key: "desc" }, group.desc) : null
+			];
+
+			return h(
+				"details",
+				{
+					className: "xiaoai-group" + (dirty ? " xiaoai-group-dirty" : ""),
+					key: group.id,
+					open: options.open === undefined ? Boolean(group.defaultOpen) : Boolean(options.open),
+					// 只在用户实际交互时同步；初始 open 变化不进这里。
+					onToggle: (event) => {
+						if (typeof options.onToggle === "function") options.onToggle(group.id, event.target.open);
+					}
+				},
+				h(
+					"summary",
+					{
+						className: "xiaoai-group-summary",
+						"aria-labelledby": titleId,
+						// 脏点不能只靠颜色传达（§6.6）
+						"aria-label":dirty ? group.title + "，有未保存的修改" : group.title
+					},
+					h("span", { className: "xiaoai-group-caret", "aria-hidden": "true" }),
+					h("span", { className: "xiaoai-group-headtext" }, summaryChildren)
+				),
+				group.desc ? h("p", { className: "xiaoai-group-note" }, group.desc) : null,
+				h("div", { className: "xiaoai-group-body" }, options.children)
+			);
+		}
+
+		/**
+		 * 三列字段行：标签（14em 定宽） / 控件（flex） / 说明（灰字）。
+		 *
+		 * 长说明走 `?` + tooltip（§6.6 的 dsh-im 范式），不占常驻空间。
+		 */
+		function FieldRow(options) {
+			const labelId = options.id ? options.id + "-label" : undefined;
+			const hintId = options.id ? options.id + "-hint" : undefined;
+			const children = [
+				h(
+					"span",
+					{ className: "xiaoai-row-label", key: "label", id: labelId },
+					options.label,
+					options.required ? h("span", { className: "xiaoai-row-req" }, "*") : null
+				),
+				h("div", { className: "xiaoai-row-control", key: "control" }, options.control)
+			];
+
+			if (options.error) {
+				children.push(
+					h(
+						"p",
+						{ className: "xiaoai-row-error", key: "error", role: "alert", id: hintId },
+						options.error
+					)
+				);
+			} else if (options.hint) {
+				children.push(
+					h("p", { className: "xiaoai-row-hint", key: "hint", id: hintId }, options.hint)
+				);
+			}
+
+			return h(
+				"div",
+				{ className: "xiaoai-row" + (options.error ? " xiaoai-row-invalid" : "") },
+				children
+			);
+		}
+
+		/**
+		 * 下拉框。options 支持两种形状：
+		 *   · `[{ value, label, note }]`
+		 *   · `[{ group: "providerName", items: [{ value, label }] }]` → 渲染成 <optgroup>
+		 *
+		 * 第一项恒为「跟随宿主默认」（value 为空串），因为空值就是本插件的
+		 * 「不覆盖宿主」语义（见 runtime.js #resolveModelSelection）。
+		 */
+		function Select(options) {
+			const items = [];
+			for (const entry of options.options || []) {
+				if (entry && Array.isArray(entry.items)) {
+					items.push(
+						h(
+							"optgroup",
+							{ label: entry.group, key: "g-" + entry.group },
+							entry.items.map((item) =>
+								h("option", { value: item.value, key: item.value }, item.label)
+							)
+						)
+					);
+				} else if (entry) {
+					items.push(
+						h("option", { value: entry.value, key: entry.value },
+							entry.note ? entry.label + "　—　" + entry.note : entry.label)
+					);
+				}
+			}
+			return h(
+				"select",
+				{
+					className: "xiaoai-select",
+					value: options.value === undefined || options.value === null ? "" : String(options.value),
+					disabled: Boolean(options.disabled),
+					onChange: (event) => options.onChange(event.target.value)
+				},
+				items
+			);
+		}
+
+		/** 开关（checkbox 语义，但外观是 iOS 式滑轨）。 */
+		function Switch(options) {
+			return h(
+				"label",
+				{ className: "xiaoai-switch" },
+				h("input", {
+					type: "checkbox",
+					checked: Boolean(options.checked),
+					disabled: Boolean(options.disabled),
+					onChange: (event) => options.onChange(event.target.checked)
+				}),
+				h("span", { className: "xiaoai-switch-track", "aria-hidden": "true" },
+					h("span", { className: "xiaoai-switch-thumb" })),
+				options.text ? h("span", { className: "xiaoai-switch-text" }, options.text) : null
+			);
+		}
+
+		/**
+		 * 标签式数组输入（chip 输入）。
+		 *
+		 * 交互（§3）：
+		 *   · 已添加项渲染成 chip，每个带 × 删除（aria-label="删除 xxx"）
+		 *   · 输入框独立在末尾，回车追加
+		 *   · 粘贴逗号串自动拆分（半角/全角/顿号/换行）
+		 *   · 空数组显示占位文案，不是空白
+		 *
+		 * ⚠️ 值必须是**真数组**。写成逗号分隔字符串会让「回车加一项」
+		 * 变成字符串拼接，保存时被 parseList 切碎 → 丢数据。
+		 */
+		function TagInput(options) {
+			const raw = Array.isArray(options.value) ? options.value : parseList(options.value);
+			const [text, setText] = React.useState("");
+			const inputId = options.id ? options.id + "-input" : undefined;
+
+			const commit = (inputText) => {
+				const additions = splitEntryText(inputText);
+				if (additions.length === 0) return;
+				options.onChange(appendEntries(raw, additions));
+				setText("");
+			};
+
+			const chips =
+				raw.length === 0
+					? [
+							h(
+								"span",
+								{ className: "xiaoai-chip-empty", key: "empty" },
+								options.emptyText || "空 = 不播报这一条"
+							)
+						]
+					: raw.map((item, index) =>
+							h(
+								"span",
+								{ className: "xiaoai-chip", key: "chip-" + index + "-" + item },
+								h("span", { className: "xiaoai-chip-text" }, item),
+								h(
+									"button",
+									{
+										type: "button",
+										className: "xiaoai-chip-del",
+										"aria-label": "删除 " + item,
+										onClick: () => options.onChange(raw.filter((_, i) => i !== index))
+									},
+									"×"
+								)
+							)
+						);
+
+			return h(
+				"div",
+				{ className: "xiaoai-tags" },
+				h("div", { className: "xiaoai-tags-list" }, chips),
+				h(
+					"div",
+					{ className: "xiaoai-tags-input-row" },
+					h("input", {
+						id: inputId,
+						className: "xiaoai-input xiaoai-tags-input",
+						type: "text",
+						value: text,
+						placeholder: options.placeholder || "输入后回车添加",
+						"aria-describedby": options.describedBy,
+						onChange: (event) => {
+							const next = event.target.value;
+							// 粘贴含分隔符的整串时直接拆分入库，省一次回车
+							if (/[,，、\n\r\t]/.test(next)) commit(next);
+							else setText(next);
+						},
+						onKeyDown: (event) => {
+							if (event.key === "Enter") {
+								event.preventDefault();
+								commit(text);
+							} else if (event.key === "Backspace" && text === "" && raw.length > 0) {
+								// 空输入框按退格删最后一项 —— 连续删不丢键盘流
+								options.onChange(raw.slice(0, -1));
+							}
+						},
+						// 失焦时落库，避免「填了没回车就点保存」导致丢输入
+						onBlur: () => {
+							if (text.trim() !== "") commit(text);
+						}
+					}),
+					h("span", { className: "xiaoai-tags-tip" }, "回车添加")
+				),
+				options.hint ? h("p", { className: "xiaoai-row-hint" }, options.hint) : null
+			);
+		}
+
+		/** 长说明的 `?` 按钮 + tooltip（§6.6）。 */
+		function HelpTip(options) {
+			const tipId = options.id + "-tip";
+			return h(
+				"span",
+				{ className: "xiaoai-help" },
+				h(
+					"button",
+					{
+						type: "button",
+						className: "xiaoai-help-button",
+						"aria-label": "查看" + options.label + "说明",
+						"aria-describedby": tipId
+					},
+					h("span", { "aria-hidden": "true" }, "?")
+				),
+				h(
+					"span",
+					{ className: "xiaoai-help-tip", id: tipId, role: "tooltip" },
+					options.text
+				)
+			);
+		}
+
+		/** 组内小节标题（用于「提示语」组的两段划分）。 */
+		function SubHeading(text, hint) {
+			return h(
+				"div",
+				{ className: "xiaoai-subheading" },
+				h("h4", null, text),
+				hint ? h("span", { className: "xiaoai-muted" }, hint) : null
+			);
+		}
+
+		//#endregion
 
 		//#endregion
 
@@ -1550,7 +2500,9 @@ const RPC_NS = "xiaoai";
 						{ className: "xiaoai-speaker" },
 						isBlank(speaker.name) ? "未识别音箱" : speaker.name
 					),
-					h("span", { className: "xiaoai-muted" }, isBlank(speaker.model) ? "型号未知" : speaker.model)
+					h("span", { className: "xiaoai-muted" }, isBlank(speaker.model) ? "型号未知" : speaker.model),
+					h("span", { className: "xiaoai-status-sep" }, "·"),
+					AiModeBadge(safe.aiMode)
 				),
 				h(
 					"div",
@@ -1560,6 +2512,20 @@ const RPC_NS = "xiaoai";
 						"span",
 						{ className: dsh.reachable ? "xiaoai-ok" : "xiaoai-bad" },
 						dsh.reachable ? "可达" : "不可达"
+					),
+					h("span", { className: "xiaoai-status-sep" }, "·"),
+					h("span", { className: "xiaoai-info-label" }, "会话："),
+					h(
+						"span",
+						{ className: isBlank(safe.sessionId) ? "xiaoai-muted" : "xiaoai-ok" },
+						isBlank(safe.sessionId) ? "未绑定" : "已绑定"
+					),
+					h("span", { className: "xiaoai-status-sep" }, "·"),
+					h("span", { className: "xiaoai-info-label" }, "工作区："),
+					h(
+						"span",
+						{ className: isBlank(safe.workspacePath) ? "xiaoai-muted" : "" },
+						isBlank(safe.workspacePath) ? "未知" : String(safe.workspacePath)
 					)
 				)
 			];
@@ -1587,19 +2553,57 @@ const RPC_NS = "xiaoai";
 			return h("div", { className: "xiaoai-header" }, children);
 		}
 
-		/** 5. 操作按钮。 */
+		/**
+		 * 5. 操作区：三类动作分开（§6.1）。
+		 *
+		 * 现状把 5 个按钮平铺，「保存」和「测试音箱」视觉权重相同 —— 不合理。
+		 * 分成：
+		 *   · 配置动作：保存（脏时才可用）/ 撤销修改 / 恢复默认 / 应用推荐配置
+		 *   · 工具动作：测试音箱 / 自检 / 重启插件 —— **立即执行**，不参与 draft
+		 *
+		 * busyAction 是单值：只有被点的那个按钮转圈，其余保持可用（它们互不冲突）。
+		 */
 		function renderActions(state) {
-			const busy = state.busy;
+			const busy = state.busyAction;
+			const dirty = state.dirtyCount > 0;
+			const spinner = h("span", { className: "xiaoai-spinner", "aria-hidden": "true" });
+			const label = (id, idle, doing) =>
+				busy === id ? h("span", { className: "xiaoai-btn-busy" }, spinner, doing) : idle;
+
 			return h(
 				"div",
-				{ className: "xiaoai-actions" },
-				Button("保存", state.onSave, { primary: true, disabled: busy }),
-				Button("重启", state.onRestart, { disabled: busy }),
-				Button("测试音箱", state.onSpeak, { disabled: busy }),
-				Button("自检", state.onSelfTest, { disabled: busy }),
-				// 一键填入实践过的推荐配置 —— 用户面对一堆空字段往往不知填什么，
-				// 于是留空，然后发现「所有话都被转走了」或「说了没反应」。
-				Button("应用推荐配置", state.onApplyRecommended, { disabled: busy })
+				{ className: "xiaoai-actionbar", "aria-busy": busy !== null },
+				dirty
+					? h(
+							"p",
+							{ className: "xiaoai-dirty-note", role: "status", key: "dirty" },
+							"● 有 " + state.dirtyCount + " 项未保存的修改"
+						)
+					: null,
+				h(
+					"div",
+					{ className: "xiaoai-actions", key: "config" },
+					Button(label("save", "保存", "保存中…"), state.onSave, {
+						primary: true,
+						disabled: !dirty || busy !== null
+					}),
+					Button("撤销修改", state.onRevert, { disabled: !dirty || busy !== null }),
+					Button("恢复默认", state.onRestoreDefaults, { disabled: busy !== null }),
+					h("span", { className: "xiaoai-actions-gap", key: "gap" }),
+					Button(
+						label("recommend", "应用推荐配置", "读取中…"),
+						state.onApplyRecommended,
+						{ disabled: busy !== null, title: "只填入草稿，不立即保存" }
+					)
+				),
+				h(
+					"div",
+					{ className: "xiaoai-actions xiaoai-actions-tools", key: "tools" },
+					h("span", { className: "xiaoai-actions-lead" }, "工具："),
+					Button(label("speak", "测试音箱", "播放中…"), state.onSpeak, { disabled: busy !== null }),
+					Button(label("selftest", "自检", "自检中…"), state.onSelfTest, { disabled: busy !== null }),
+					Button(label("restart", "重启插件", "重启中…"), state.onRestart, { disabled: busy !== null })
+				)
 			);
 		}
 
@@ -1704,56 +2708,628 @@ const RPC_NS = "xiaoai";
 			return h("div", { className: "xiaoai-logs-block" }, children);
 		}
 
-		/** 设置表单：总开关 + 凭据 + 行为。 */
+		/**
+		 * 设置表单：6 个可折叠分组（设计见 docs/research/ui-redesign.md §2、§4）。
+		 *
+		 * 分组与默认状态：
+		 *   ① 会话与模型   ★默认展开   ← workspace/agentPreset/provider/model/sessionReuse
+		 *   ② 接入音箱      ★默认展开   ← enabled/userId/password/did/deviceModel/tts/wakeUp
+		 *   ③ 音箱行为      默认折叠     ← AI 模式 / 轮询 / 字数 / 超时 / 三类关键词 / …
+		 *   ④ 提示语        默认折叠     ← 9 组提示语（分「对话流程」+「出错提示」）
+		 *   ⑤ 高级 / 桥接   默认折叠     ← 忽略规则 / 历史条数 / 详细日志 / 桥接端点
+		 *   ⑥ 状态与日志    默认折叠     ← 最近活动 / 会话绑定 / 对话历史 / 运行日志
+		 *
+		 * 38 个 schema 字段的落位（`onboarded` 是内部状态，按设计隐藏）：
+		 *   ① 5 个 · ② 7 个(+1 隐藏) · ③ 11 个 · ④ 9 个 · ⑤ 5 个 = 37 可见 + 1 隐藏 ✓
+		 */
+		const SETTINGS_GROUPS = [
+			{
+				id: "session",
+				title: "① 会话与模型",
+				desc: "语音会话落在哪个工作区、用哪套 Agent 预设与模型。",
+				defaultOpen: true
+			},
+			{
+				id: "access",
+				title: "② 接入音箱",
+				desc: "小米账号、音箱设备与型号。",
+				defaultOpen: true
+			},
+			{
+				id: "behavior",
+				title: "③ 音箱行为",
+				desc: "轮询节奏、回复长度、AI 模式与三类唤醒关键词。",
+				defaultOpen: false
+			},
+			{ id: "phrases", title: "④ 提示语", desc: "音箱在不同阶段念的句子。", defaultOpen: false },
+			{
+				id: "advanced",
+				title: "⑤ 高级 / 桥接",
+				desc: "下面的设置一般不需要改。改动前建议先记下原值。",
+				defaultOpen: false
+			},
+			{ id: "status", title: "⑥ 状态与日志", desc: "最近活动、会话绑定与运行日志。", defaultOpen: false }
+		];
+
+		/** 组 id → 该组包含的字段（用于计算「本组是否脏」）。 */
+		const GROUP_FIELDS = {
+			session: ["workspace", "agentPreset", "provider", "model", "sessionReuse"],
+			access: ["enabled", "userId", "password", "did", "deviceModel", "ttsCommand", "wakeUpCommand"],
+			behavior: [
+				"aiModeEnabled",
+				"pollIntervalMs",
+				"maxReplyChars",
+				"replyTimeoutMs",
+				"callAIKeywords",
+				"wakeUpKeywords",
+				"exitKeywords",
+				"exitKeepAliveAfter",
+				"localCommandsEnabled",
+				"triggerKeywords",
+				"progressAfterSeconds"
+			],
+			phrases: [
+				"onEnterAI",
+				"onExitAI",
+				"onAIAsking",
+				"onAIReplied",
+				"onAIProgress",
+				"onAIError",
+				"onAIErrorNetwork",
+				"onAIErrorAuth",
+				"onAIErrorTimeout"
+			],
+			advanced: ["ignorePatterns", "historyLimit", "verboseLog", "dshApiUrl", "dshApiToken"],
+			status: []
+		};
+
 		function renderSettingsForm(state) {
 			const draft = state.draft;
 			if (!draft) return h("p", { className: "xiaoai-muted" }, "设置加载中…");
 
 			const set = (field) => (value) => state.onDraftChange(field, value);
+			const dirty = new Set(state.dirtyKeys || []);
+			const groupDirty = (groupId) => (GROUP_FIELDS[groupId] || []).some((f) => dirty.has(f));
+
+			// ── ① 会话与模型 ────────────────────────────────────────
+			//
+			// 这一组是用户原话抱怨缺失的三个设置所在（工作区 / 模型选择 / 会话）。
+			// provider 与 model 必须成对：runtime.js #resolveModelSelection
+			// 只在**两者都非空**时才用配置，只填一个会被静默忽略 ——
+			// 用户会以为「设了却没生效」。因此这里用一个组合控件表达约束。
+			const host = state.hostOptions || {};
+			const workspaceOptions = (host.workspaces || []).map((w) => ({
+				value: w.path || w.id,
+				label: (w.name ? w.name + " — " : "") + (w.path || w.id)
+			}));
+			const presetOptions = (host.presets || []).map((p) => ({
+				value: p.id,
+				label: p.name && p.name !== p.id ? p.name + "（" + p.id + "）" : p.id
+			}));
+			const modelOptions = host.models || [];
+
+			// 模型下拉按 provider 分组渲染成 <optgroup>
+			const modelGroups = [];
+			for (const item of modelOptions) {
+				let bucket = modelGroups.find((g) => g.group === item.provider);
+				if (!bucket) {
+					bucket = { group: item.provider, items: [] };
+					modelGroups.push(bucket);
+				}
+				bucket.items.push({
+					value: item.model,
+					label: item.model + (item.isDefault ? "（当前默认）" : "")
+				});
+			}
+
+			const providerNames = [];
+			for (const item of modelOptions) {
+				if (providerNames.indexOf(item.provider) === -1) providerNames.push(item.provider);
+			}
+
+			const modelCatalogWarning =
+				state.hostOptionsError
+					? "无法读取宿主的模型目录（" + state.hostOptionsError + "），请手动填写 provider 与模型名。"
+					: null;
+
+			/**
+			 * provider/model 成对约束的实时提示。
+			 * 两者都空 = 跟随宿主默认（正常）；只填一个 = 会被静默忽略（必须警告）。
+			 */
+			const pairFilled = !isBlank(draft.provider) && !isBlank(draft.model);
+			const pairHalf = (!isBlank(draft.provider) && isBlank(draft.model)) || (isBlank(draft.provider) && !isBlank(draft.model));
+			const pairHint = pairHalf
+				? "⚠️ provider 与模型必须**同时填写**才生效，只填一个会被忽略。"
+				: pairFilled
+					? "已指定 " + draft.provider + " / " + draft.model + "。"
+					: "留空 = 使用 DSH 当前默认模型。";
+
+			const sessionBody = [
+				FieldRow({
+					key: "workspace",
+					id: "workspace",
+					label: "工作区",
+					hint:
+						"语音会话会绑定到这个目录，决定它在 DSH 会话列表里归到哪个工作区。" +
+						"留空 = 用默认的 ~/.dsh/im。",
+					control: h(
+						"div",
+						{ className: "xiaoai-control-pair" },
+						workspaceOptions.length > 0
+							? Select({
+									value: draft.workspace,
+									options: [{ value: "", label: "跟随默认（~/.dsh/im）" }].concat(workspaceOptions),
+									onChange: set("workspace")
+								})
+							: null,
+						TextInput({
+							value: draft.workspace,
+							onChange: set("workspace"),
+							placeholder: "留空 = ~/.dsh/im，或粘贴绝对路径"
+						})
+					)
+				}),
+				FieldRow({
+					key: "agentPreset",
+					id: "agentPreset",
+					label: "Agent 预设",
+					hint: "决定这套会话加载哪些工具与提示词。留空 = 跟随宿主默认预设。",
+					control:
+						presetOptions.length > 0
+							? Select({
+									value: draft.agentPreset,
+									options: [{ value: "", label: "跟随宿主默认" }].concat(presetOptions),
+									onChange: set("agentPreset")
+								})
+							: TextInput({
+									value: draft.agentPreset,
+									onChange: set("agentPreset"),
+									placeholder: "预设 id，留空 = 宿主默认"
+								})
+				}),
+				FieldRow({
+					key: "provider",
+					id: "provider",
+					label: "模型 Provider",
+					hint: pairHint,
+					error: pairHalf ? "provider 与模型必须成对，否则配置不生效" : null,
+					control:
+						providerNames.length > 0
+							? Select({
+									value: draft.provider,
+									options: [{ value: "", label: "跟随宿主默认" }].concat(
+										providerNames.map((name) => ({ value: name, label: name }))
+									),
+									onChange: (value) => {
+										// 成对约束：选 provider 时，若模型不属于该 provider，
+										// 自动切到该 provider 的第一个模型，避免留下半对配置。
+										set("provider")(value);
+										if (value === "") {
+											set("model")("");
+											return;
+										}
+										const current = modelOptions.find(
+											(m) => m.provider === value && m.model === draft.model
+										);
+										if (!current) {
+											const first = modelOptions.find((m) => m.provider === value);
+											set("model")(first ? first.model : "");
+										}
+									}
+								})
+							: TextInput({
+									value: draft.provider,
+									onChange: set("provider"),
+									placeholder: "如 anthropic，留空 = 宿主默认"
+								})
+				}),
+				FieldRow({
+					key: "model",
+					id: "model",
+					label: "模型",
+					hint: "留空 = 用 DSH 当前默认模型。",
+					control:
+						modelGroups.length > 0
+							? Select({
+									value: draft.model,
+									options: [{ value: "", label: "跟随宿主默认" }].concat(modelGroups),
+									onChange: set("model")
+								})
+							: TextInput({
+									value: draft.model,
+									onChange: set("model"),
+									placeholder: "模型 id，留空 = 宿主默认"
+								}),
+					...(modelCatalogWarning ? {} : {})
+				}),
+				modelCatalogWarning
+					? h("p", { className: "xiaoai-row-hint xiaoai-warn-inline", key: "catalog-warn" }, modelCatalogWarning)
+					: null,
+				FieldRow({
+					key: "sessionReuse",
+					id: "sessionReuse",
+					label: "会话复用",
+					hint: "开启后重启插件仍继续用上次绑定的会话，保留上下文（能记住前文）；探活失败会自动新建。关闭则每次重新开始。",
+					control: Switch({
+						checked: Boolean(draft.sessionReuse),
+						onChange: set("sessionReuse"),
+						text: draft.sessionReuse ? "开启" : "关闭"
+					})
+				})
+			];
+
+			// ── ② 接入音箱 ──────────────────────────────────────────
+			const modelCandidates = state.deviceModels || [];
+			const sessionBodyExtra = [];
+
+			const accessBody = [
+				FieldRow({
+					key: "enabled",
+					id: "enabled",
+					label: "启用",
+					hint: "关掉后不再轮询音箱，语音入口整体停用。",
+					control: Switch({
+						checked: Boolean(draft.enabled),
+						onChange: set("enabled"),
+						text: draft.enabled ? "已启用" : "已停用"
+					})
+				}),
+				FieldRow({
+					key: "userId",
+					id: "userId",
+					label: "小米 ID",
+					hint: "小米账号 ID，不是手机号。",
+					control: TextInput({
+						value: draft.userId,
+						onChange: set("userId"),
+						placeholder: "小米账号 ID（不是手机号）"
+					})
+				}),
+				FieldRow({
+					key: "password",
+					id: "password",
+					label: "密码",
+					hint: "留空 = 不修改已保存的密码。",
+					control: TextInput({
+						value: draft.password,
+						onChange: set("password"),
+						type: state.passwordVisible ? "text" : "password",
+						autoComplete: "new-password",
+						placeholder: state.passwordRedacted ? "已保存（留空则不修改）" : "小米账号密码"
+					})
+				}),
+				FieldRow({
+					key: "did",
+					id: "did",
+					label: "音箱 DID",
+					hint: "设备 ID 或米家名称。",
+					control: TextInput({
+						value: draft.did,
+						onChange: set("did"),
+						placeholder: "设备 ID 或米家名称"
+					})
+				}),
+				FieldRow({
+					key: "deviceModel",
+					id: "deviceModel",
+					label: "音箱型号",
+					hint: "空 = 连接时从设备硬件信息自动识别（推荐）。",
+					control:
+						modelCandidates.length > 0
+							? Select({
+									value: draft.deviceModel,
+									options: [{ value: "", label: "自动识别" }].concat(
+										modelCandidates.map((m) => ({
+											value: m.code,
+											label: m.name ? m.code + "　" + m.name : m.code,
+											note: m.support ? supportText(m.support) : ""
+										}))
+									),
+									onChange: set("deviceModel")
+								})
+							: TextInput({
+									value: draft.deviceModel,
+									onChange: set("deviceModel"),
+									placeholder: "如 OH2P，留空 = 自动识别"
+								})
+				}),
+				// 高级指令：99% 的用户用不到，折叠起来但排障时能找到
+				h(
+					"details",
+					{ className: "xiaoai-subdetails", key: "advanced-cmd" },
+					h("summary", null, "高级：自定义 TTS / 唤醒指令"),
+					FieldRow({
+						key: "ttsCommand",
+						id: "ttsCommand",
+						label: "TTS 指令",
+						hint: "仅型号未被兼容表收录时手填，格式如 7,3。",
+						control: TextInput({
+							value: draft.ttsCommand,
+							onChange: set("ttsCommand"),
+							placeholder: "如 7,3（留空 = 用兼容表默认值）"
+						})
+					}),
+					FieldRow({
+						key: "wakeUpCommand",
+						id: "wakeUpCommand",
+						label: "唤醒指令",
+						hint: "仅型号未被兼容表收录时手填，格式如 7,1。",
+						control: TextInput({
+							value: draft.wakeUpCommand,
+							onChange: set("wakeUpCommand"),
+							placeholder: "如 7,1（留空 = 用兼容表默认值）"
+						})
+					})
+				)
+			];
+
+			// ── ③ 音箱行为 ──────────────────────────────────────────
+			const aiModeOn = Boolean(draft.aiModeEnabled);
+			const behaviorBody = [
+				FieldRow({
+					key: "aiModeEnabled",
+					id: "aiModeEnabled",
+					label: "启用 AI 模式",
+					hint: "开启后支持「进入 / 退出 AI 模式」的连续对话；关闭则只做逐条关键词匹配。",
+					control: Switch({
+						checked: aiModeOn,
+						onChange: set("aiModeEnabled"),
+						text: aiModeOn ? "开启" : "关闭"
+					})
+				}),
+				FieldRow({
+					key: "pollIntervalMs",
+					id: "pollIntervalMs",
+					label: "轮询间隔",
+					error: state.fieldWarnings ? state.fieldWarnings.pollIntervalMs : null,
+					hint: "毫秒。越小响应越快，但小米接口有风控，最小 2000。",
+					control: TextInput({
+						value: draft.pollIntervalMs,
+						onChange: set("pollIntervalMs"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "maxReplyChars",
+					id: "maxReplyChars",
+					label: "回复字数上限",
+					hint: "音箱念太长很难受，超出部分会被截断。",
+					control: TextInput({
+						value: draft.maxReplyChars,
+						onChange: set("maxReplyChars"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "replyTimeoutMs",
+					id: "replyTimeoutMs",
+					label: "回复等待上限",
+					error: state.fieldWarnings ? state.fieldWarnings.replyTimeoutMs : null,
+					hint: "毫秒。超过就放弃并播报超时提示。",
+					control: TextInput({
+						value: draft.replyTimeoutMs,
+						onChange: set("replyTimeoutMs"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "exitKeepAliveAfter",
+					id: "exitKeepAliveAfter",
+					label: "静默退出时长",
+					error: state.fieldWarnings ? state.fieldWarnings.exitKeepAliveAfter : null,
+					hint: "秒。AI 模式下多久没说话自动退出，最小 5。",
+					control: TextInput({
+						value: draft.exitKeepAliveAfter,
+						onChange: set("exitKeepAliveAfter"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "progressAfterSeconds",
+					id: "progressAfterSeconds",
+					label: "进度播报阈值",
+					error: state.fieldWarnings ? state.fieldWarnings.progressAfterSeconds : null,
+					hint: "秒。任务超过这个时间没完成，先播一句安抚语，最小 10。",
+					control: TextInput({
+						value: draft.progressAfterSeconds,
+						onChange: set("progressAfterSeconds"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "localCommandsEnabled",
+					id: "localCommandsEnabled",
+					label: "本地快速路径",
+					hint: "音量 / 时间 / 停止这类高频指令本机处理，毫秒级响应、不走大模型。",
+					control: Switch({
+						checked: Boolean(draft.localCommandsEnabled),
+						onChange: set("localCommandsEnabled"),
+						text: draft.localCommandsEnabled ? "开启" : "关闭"
+					})
+				}),
+				SubHeading("AI 模式关键词", "三类语义不同，别混用"),
+				FieldRow({
+					key: "wakeUpKeywords",
+					id: "wakeUpKeywords",
+					label: "进入 AI 模式",
+					control: TagInput({
+						id: "wakeUpKeywords",
+						value: draft.wakeUpKeywords,
+						onChange: set("wakeUpKeywords"),
+						emptyText: "空 = 只能用触发词逐条唤醒",
+						placeholder: "如：进入AI模式"
+					}),
+					hint: "说了这些词就进入连续对话，之后不用再喊触发词。"
+				}),
+				FieldRow({
+					key: "exitKeywords",
+					id: "exitKeywords",
+					label: "退出 AI 模式",
+					control: TagInput({
+						id: "exitKeywords",
+						value: draft.exitKeywords,
+						onChange: set("exitKeywords"),
+						emptyText: "空 = 只能靠静默超时退出",
+						placeholder: "如：退出AI模式"
+					}),
+					hint: "说了就回到待命，普通话不再处理。"
+				}),
+				FieldRow({
+					key: "callAIKeywords",
+					id: "callAIKeywords",
+					label: "直接问",
+					control: TagInput({
+						id: "callAIKeywords",
+						value: draft.callAIKeywords,
+						onChange: set("callAIKeywords"),
+						emptyText: "空 = 不使用直接问",
+						placeholder: "如：问问"
+					}),
+					hint: "以这些词开头时立刻交给 DSH，但不改变模式。"
+				}),
+				// ⚠️ triggerKeywords 与 aiModeEnabled 是互斥的两套机制
+				// （runtime.js:1206-1242 的状态机分支）—— 只在关闭 AI 模式时展开。
+				aiModeOn
+					? h(
+							"p",
+							{ className: "xiaoai-row-hint", key: "trigger-off-note" },
+							"「触发词」仅在**关闭 AI 模式**时生效，当前已隐藏。"
+						)
+					: FieldRow({
+							key: "triggerKeywords",
+							id: "triggerKeywords",
+							label: "触发词",
+							control: TagInput({
+								id: "triggerKeywords",
+								value: draft.triggerKeywords,
+								onChange: set("triggerKeywords"),
+								emptyText: "空 = 全部转发",
+								placeholder: "如：小爱同学"
+							}),
+							hint: "仅在你关闭 AI 模式后使用。留空 = 所有话都转发给 DSH。"
+						})
+			];
+
+			// ── ④ 提示语 ────────────────────────────────────────────
+			//
+			// 9 个字段语义一致：空数组 = 不播报，多条时随机取一条。
+			// 分「对话流程」与「出错提示」两小节（§4 的组④）。
+			const phraseRow = (field, label, hint, placeholder) =>
+				FieldRow({
+					key: field,
+					id: field,
+					label: label,
+					hint: hint,
+					control: TagInput({
+						id: field,
+						value: draft[field],
+						onChange: set(field),
+						emptyText: "空 = 不播报这一条",
+						placeholder: placeholder || "输入后回车添加，可加多条"
+					})
+				});
+
+			const phrasesBody = [
+				SubHeading("对话流程提示", "多条时随机取一条播报"),
+				phraseRow("onEnterAI", "进入 AI 模式", "进入时播报。"),
+				phraseRow("onExitAI", "退出 AI 模式", "退出时播报。"),
+				phraseRow("onAIAsking", "思考中", "已交给 DSH、等回复时播报。"),
+				phraseRow("onAIReplied", "回答完毕", "回复念完之后播报。默认空 = 不播报。"),
+				phraseRow("onAIProgress", "进度安抚", "长任务超过阈值时播报一次。"),
+				SubHeading("出错提示", "按错误类型分类播报，比笼统的「出错了」有用得多"),
+				phraseRow("onAIErrorNetwork", "出错 · 网络", "连接失败 / 断开时。"),
+				phraseRow("onAIErrorAuth", "出错 · 鉴权", "401 / 403 / token 过期时。"),
+				phraseRow("onAIErrorTimeout", "出错 · 超时", "请求超时时。"),
+				phraseRow("onAIError", "出错 · 兜底", "未命中上面任何分类时的兜底。")
+			];
+
+			// ── ⑤ 高级 / 桥接 ───────────────────────────────────────
+			const advancedBody = [
+				FieldRow({
+					key: "ignorePatterns",
+					id: "ignorePatterns",
+					label: "忽略规则",
+					control: TagInput({
+						id: "ignorePatterns",
+						value: draft.ignorePatterns,
+						onChange: set("ignorePatterns"),
+						emptyText: "空 = 不过滤任何句子",
+						placeholder: "如：^小爱同学$"
+					}),
+					hint: "正则。匹配到的句子直接忽略，不转发给 DSH。"
+				}),
+				FieldRow({
+					key: "historyLimit",
+					id: "historyLimit",
+					label: "历史保留条数",
+					error: state.fieldWarnings ? state.fieldWarnings.historyLimit : null,
+					hint: "面板里能回看多少轮对话。",
+					control: TextInput({
+						value: draft.historyLimit,
+						onChange: set("historyLimit"),
+						type: "number"
+					})
+				}),
+				FieldRow({
+					key: "verboseLog",
+					id: "verboseLog",
+					label: "详细日志",
+					hint: "打开后日志量明显变大，仅排障时用。",
+					control: Switch({
+						checked: Boolean(draft.verboseLog),
+						onChange: set("verboseLog"),
+						text: draft.verboseLog ? "开启" : "关闭"
+					})
+				}),
+				FieldRow({
+					key: "dshApiUrl",
+					id: "dshApiUrl",
+					label: "HTTP 桥接地址",
+					hint: "仅在进程内 agent 不可用时才走这条通路。一般不用改。",
+					control: TextInput({
+						value: draft.dshApiUrl,
+						onChange: set("dshApiUrl"),
+						placeholder: "http://127.0.0.1:3082/api/session"
+					})
+				}),
+				FieldRow({
+					key: "dshApiToken",
+					id: "dshApiToken",
+					label: "HTTP 桥接令牌",
+					hint: "敏感。留空 = 不修改。",
+					control: TextInput({
+						value: draft.dshApiToken,
+						onChange: set("dshApiToken"),
+						type: "password",
+						autoComplete: "new-password",
+						placeholder: state.tokenRedacted ? "已保存（留空则不修改）" : "桥接鉴权令牌"
+					})
+				})
+			];
+
+			// ── ⑥ 状态与日志 ────────────────────────────────────────
+			const statusBody = [state.renderStatusGroup()];
+
+			const bodies = {
+				session: sessionBody,
+				access: accessBody,
+				behavior: behaviorBody,
+				phrases: phrasesBody,
+				advanced: advancedBody,
+				status: statusBody
+			};
 
 			return h(
 				"div",
 				{ className: "xiaoai-form" },
-				h(
-					"label",
-					{ className: "xiaoai-switch", key: "enabled" },
-					h("input", {
-						type: "checkbox",
-						checked: Boolean(draft.enabled),
-						onChange: (event) => state.onDraftChange("enabled", event.target.checked)
-					}),
-					h("span", null, "启用")
-				),
-				SectionTitle("小米账号"),
-				Field("小米 ID", TextInput({ value: draft.userId, onChange: set("userId"), placeholder: "小米账号 ID（不是手机号）" })),
-				Field(
-					"密码",
-					TextInput({
-						value: draft.password,
-						onChange: set("password"),
-						type: "password",
-						autoComplete: "new-password",
-						placeholder: state.passwordRedacted ? "已保存（留空则不修改）" : "小米账号密码"
+				SETTINGS_GROUPS.map((group) =>
+					CollapsibleGroup({
+						group,
+						open: state.openGroups.has(group.id),
+						dirty: groupDirty(group.id),
+						onToggle: state.onToggleGroup,
+						children: bodies[group.id]
 					})
-				),
-				Field("音箱 DID", TextInput({ value: draft.did, onChange: set("did"), placeholder: "设备 ID 或米家名称" })),
-				SectionTitle("行为"),
-				Field(
-					"轮询间隔 (ms)",
-					TextInput({ value: draft.pollIntervalMs, onChange: set("pollIntervalMs"), type: "number" }),
-					"最小 2000"
-				),
-				Field(
-					"回复最大字数",
-					TextInput({ value: draft.maxReplyChars, onChange: set("maxReplyChars"), type: "number" })
-				),
-				Field(
-					"触发词",
-					TextInput({ value: draft.triggerKeywords, onChange: set("triggerKeywords"), placeholder: "逗号分隔；留空 = 全部转发" })
-				),
-				Field(
-					"忽略规则",
-					TextInput({ value: draft.ignorePatterns, onChange: set("ignorePatterns"), placeholder: "逗号分隔的正则" })
 				)
 			);
 		}
@@ -1787,15 +3363,45 @@ const RPC_NS = "xiaoai";
 			const status = useRuntimeStatus(useXiaoai);
 
 			const [draft, setDraft] = React.useState(null);
+			/**
+			 * 基线：最近一次「加载成功 / 保存成功」的草稿快照。
+			 * 脏检查与「撤销修改」都以它为参照，因此它**只在**这两个时机更新。
+			 */
+			const [baseline, setBaseline] = React.useState(null);
 			const [revision, setRevision] = React.useState(undefined);
 			const [passwordRedacted, setPasswordRedacted] = React.useState(false);
-			const [busy, setBusy] = React.useState(false);
+			const [tokenRedacted, setTokenRedacted] = React.useState(false);
+			/** 密码明文切换（纯前端，不改传输）。 */
+			const [passwordVisible, setPasswordVisible] = React.useState(false);
+			/**
+			 * 当前正在执行的动作；null 表示空闲。
+			 * 拆成单值而不是一个 busy 布尔 —— 否则点「测试音箱」会把
+			 * 「保存」一起禁掉，语义不清（§6.2）。
+			 */
+			const [busyAction, setBusyAction] = React.useState(null);
 			const [notice, setNotice] = React.useState(null);
 			const [logsOpen, setLogsOpen] = React.useState(false);
 			const [logs, setLogs] = React.useState([]);
 			const [logsLoading, setLogsLoading] = React.useState(false);
 			const [logsError, setLogsError] = React.useState(null);
 			const [selfTestReply, setSelfTestReply] = React.useState(null);
+
+			// ── 折叠分组：初值从 localStorage 读，跨挂载存活 ──
+			const [openGroups, setOpenGroups] = React.useState(readOpenGroups);
+			const onToggleGroup = React.useCallback((groupId, isOpen) => {
+				setOpenGroups((previous) => {
+					const next = new Set(previous);
+					if (isOpen) next.add(groupId);
+					else next.delete(groupId);
+					writeOpenGroups(next);
+					return next;
+				});
+			}, []);
+
+			// ── 宿主可选项目录（工作区 / 预设 / 模型 / 音箱型号）──
+			const [hostOptions, setHostOptions] = React.useState(null);
+			const [hostOptionsError, setHostOptionsError] = React.useState(null);
+			const [deviceModels, setDeviceModels] = React.useState([]);
 
 			// ── 首次接入向导状态 ──
 			// showWizard 为 true 时整个分区只渲染向导（不渲染完整设置面板），
@@ -1847,21 +3453,75 @@ const RPC_NS = "xiaoai";
 				[rpc]
 			);
 
+			/**
+			 * 把服务端返回的 values 变成「草稿」。
+			 *
+			 * ⚠️ 三个调用点（初次加载 / 保存后回填 / 推荐配置）必须共用这一个函数。
+			 * 早期实现里保存后回填是就地拼装的，扩字段时三处会漂移 ——
+			 * 这是设计文档 §8.3-5 点名的既有重复。
+			 *
+			 * 掩码字段（password / dshApiToken）回读时是 `******`，
+			 * 直接回写会把真实密码覆盖成星号，所以这里统一清空 + 置标记。
+			 */
+			const draftFromValues = React.useCallback((rawValues) => {
+				const values = normalizeSettings(rawValues);
+				const passwordIsRedacted = isRedacted(values.password);
+				const tokenIsRedacted = isRedacted(values.dshApiToken);
+				setPasswordRedacted(passwordIsRedacted);
+				setTokenRedacted(tokenIsRedacted);
+				const next = { ...values };
+				if (passwordIsRedacted) next.password = "";
+				if (tokenIsRedacted) next.dshApiToken = "";
+				return next;
+			}, []);
+
 			/** 拉取设置（契约 §4 xiaoai.settings.get）。 */
 			const loadSettings = React.useCallback(async () => {
 				try {
 					const result = await call("xiaoai.settings.get", {});
-					const values = normalizeSettings(result && result.values);
-					setPasswordRedacted(isRedacted(values.password));
-					setDraft({
-						...values,
-						password: isRedacted(values.password) ? "" : values.password,
-						triggerKeywords: formatList(values.triggerKeywords),
-						ignorePatterns: formatList(values.ignorePatterns)
-					});
+					const next = draftFromValues(result && result.values);
+					setDraft(next);
+					setBaseline(next);
 					setRevision(result ? result.revision : undefined);
 				} catch (error) {
 					setNotice({ kind: "error", text: "设置读取失败：" + describeError(error) });
+				}
+			}, [call, draftFromValues]);
+
+			/**
+			 * 拉取宿主可选项目录（工作区 / Agent 预设 / 模型）。
+			 *
+			 * 这是模型选择与工作区下拉的数据源。**失败不阻断** ——
+			 * 拿不到就退化为手填输入框 + 一行提示（§5.1 明确要求的降级路径）。
+			 * 不能因为远端读不到就让用户完全无法配置。
+			 */
+			const loadHostOptions = React.useCallback(async () => {
+				try {
+					const result = await call("xiaoai.hostOptions", {});
+					setHostOptions({
+						workspaces: (result && result.workspaces) || [],
+						presets: (result && result.presets) || [],
+						models: (result && result.models) || []
+					});
+					setHostOptionsError(null);
+				} catch (error) {
+					setHostOptions({ workspaces: [], presets: [], models: [] });
+					setHostOptionsError(describeError(error));
+				}
+			}, [call]);
+
+			/**
+			 * 拉取音箱型号兼容表。
+			 * ⚠️ 这才是 `xiaoai.onboarding.models` 的正确用途 —— 它返回的是
+			 * **音箱硬件型号**（OH2P 这类，带 TTS / 唤醒指令字节），
+			 * 与 LLM 的 provider/model 毫无关系。绝不能拿它填模型下拉。
+			 */
+			const loadDeviceModels = React.useCallback(async () => {
+				try {
+					const result = await call("xiaoai.onboarding.models", {});
+					setDeviceModels((result && result.models) || []);
+				} catch {
+					setDeviceModels([]);
 				}
 			}, [call]);
 
@@ -1879,10 +3539,12 @@ const RPC_NS = "xiaoai";
 				}
 			}, [call]);
 
-			// 挂载时读一次设置。
+			// 挂载时读一次设置 + 宿主可选项目录。
 			React.useEffect(() => {
 				loadSettings();
-			}, [loadSettings]);
+				loadHostOptions();
+				loadDeviceModels();
+			}, [loadSettings, loadHostOptions, loadDeviceModels]);
 
 			// 展开日志时按需拉取。
 			React.useEffect(() => {
@@ -1892,31 +3554,54 @@ const RPC_NS = "xiaoai";
 			/** 保存设置（契约 §4 xiaoai.settings.update，带 revision 乐观锁）。 */
 			const onSave = React.useCallback(async () => {
 				if (!draft) return;
-				setBusy(true);
+				setBusyAction("save");
 				setNotice(null);
 				try {
 					const patch = buildPatch(draft);
 					const result = await call("xiaoai.settings.update", { patch, revision });
 					setRevision(result ? result.revision : undefined);
-					const values = normalizeSettings(result && result.values);
-					setPasswordRedacted(isRedacted(values.password));
-					setDraft({
-						...values,
-						password: isRedacted(values.password) ? "" : values.password,
-						triggerKeywords: formatList(values.triggerKeywords),
-						ignorePatterns: formatList(values.ignorePatterns)
-					});
+					const next = draftFromValues(result && result.values);
+					setDraft(next);
+					setBaseline(next);
 					setNotice({ kind: "ok", text: "设置已保存。" });
 				} catch (error) {
 					setNotice({ kind: "error", text: "保存失败：" + describeError(error) });
 				} finally {
-					setBusy(false);
+					setBusyAction(null);
 				}
-			}, [call, draft, revision]);
+			}, [call, draft, revision, draftFromValues]);
+
+			/** 撤销修改：把草稿重置回最近一次加载 / 保存的值。 */
+			const onRevert = React.useCallback(() => {
+				if (!baseline) return;
+				setDraft({ ...baseline });
+				setNotice({ kind: "ok", text: "已撤销未保存的修改。" });
+			}, [baseline]);
+
+			/**
+			 * 恢复默认：把草稿填回本地的 SETTING_DEFAULTS。
+			 * 二次确认，因为这会丢掉用户全部自定义配置（仅草稿，未落盘）。
+			 */
+			const onRestoreDefaults = React.useCallback(() => {
+				const ok =
+					typeof window === "undefined" ||
+					window.confirm("确定把所有设置恢复成默认值吗？（不会立即保存，仍需点「保存」）");
+				if (!ok) return;
+				const next = {};
+				for (const key of Object.keys(SETTING_DEFAULTS)) {
+					const value = SETTING_DEFAULTS[key];
+					next[key] = Array.isArray(value) ? value.slice() : value;
+				}
+				// 掩码字段保持留空语义，避免把占位值写回
+				next.password = "";
+				next.dshApiToken = "";
+				setDraft(next);
+				setNotice({ kind: "ok", text: "已填入默认值（未保存）。点「保存」生效。" });
+			}, []);
 
 			/** 重启轮询循环（契约 §4 xiaoai.restart）。 */
 			const onRestart = React.useCallback(async () => {
-				setBusy(true);
+				setBusyAction("restart");
 				setNotice(null);
 				try {
 					await call("xiaoai.restart", {});
@@ -1924,13 +3609,13 @@ const RPC_NS = "xiaoai";
 				} catch (error) {
 					setNotice({ kind: "error", text: "重启失败：" + describeError(error) });
 				} finally {
-					setBusy(false);
+					setBusyAction(null);
 				}
 			}, [call]);
 
 			/** 测 TTS（契约 §4 xiaoai.speak）。 */
 			const onSpeak = React.useCallback(async () => {
-				setBusy(true);
+				setBusyAction("speak");
 				setNotice(null);
 				try {
 					await call("xiaoai.speak", { text: SPEAK_TEST_PHRASE });
@@ -1938,13 +3623,13 @@ const RPC_NS = "xiaoai";
 				} catch (error) {
 					setNotice({ kind: "error", text: "测试音箱失败：" + describeError(error) });
 				} finally {
-					setBusy(false);
+					setBusyAction(null);
 				}
 			}, [call]);
 
 			/** 走完整链路自检（契约 §4 xiaoai.test）。 */
 			const onSelfTest = React.useCallback(async () => {
-				setBusy(true);
+				setBusyAction("selftest");
 				setNotice(null);
 				setSelfTestReply(null);
 				try {
@@ -1953,7 +3638,7 @@ const RPC_NS = "xiaoai";
 				} catch (error) {
 					setNotice({ kind: "error", text: "自检失败：" + describeError(error) });
 				} finally {
-					setBusy(false);
+					setBusyAction(null);
 				}
 			}, [call]);
 
@@ -1965,7 +3650,7 @@ const RPC_NS = "xiaoai";
 			 * 「编辑 draft → 保存」交互习惯。
 			 */
 			const onApplyRecommended = React.useCallback(async () => {
-				setBusy(true);
+				setBusyAction("recommend");
 				setNotice(null);
 				try {
 					const result = await call("xiaoai.settings.recommended", {});
@@ -1974,7 +3659,17 @@ const RPC_NS = "xiaoai";
 						setNotice({ kind: "error", text: "未取到推荐配置" });
 						return;
 					}
-					setDraft((previous) => (previous === null ? previous : { ...previous, ...patch }));
+					// 推荐值也要过一遍归一化：它可能带数组字段，直接展开会把
+					// 真数组换成别的形状，正是 TagInput 最怕的输入。
+					const normalized = normalizeSettings(patch);
+					setDraft((previous) => {
+						if (previous === null) return previous;
+						const next = { ...previous };
+						for (const key of Object.keys(normalized)) {
+							if (patch[key] !== undefined) next[key] = normalized[key];
+						}
+						return next;
+					});
 					const notes = Array.isArray(result.notes) ? result.notes : [];
 					setNotice({
 						kind: "ok",
@@ -1985,7 +3680,7 @@ const RPC_NS = "xiaoai";
 				} catch (error) {
 					setNotice({ kind: "error", text: "取推荐配置失败：" + describeError(error) });
 				} finally {
-					setBusy(false);
+					setBusyAction(null);
 				}
 			}, [call]);
 
@@ -2326,6 +4021,60 @@ const RPC_NS = "xiaoai";
 				);
 			}
 
+			// ── 脏检查（§6.4）──
+			//
+			// 数组字段不能用 !== 比（normalizeSettings 每次都建新数组），
+			// 所以 computeDirtyKeys 内部逐项比较。
+			const dirtyKeys = React.useMemo(
+				() => computeDirtyKeys(draft, baseline),
+				[draft, baseline]
+			);
+
+			// ── 数值字段的钳制提示（§6.3）──
+			//
+			// 以前 buildPatch 是「静默钳制」：用户填 500 会被悄悄改成 2000，
+			// 没有任何反馈。现在行内实时说明，让用户知道发生了什么。
+			const fieldWarnings = React.useMemo(() => {
+				if (!draft) return {};
+				const out = {};
+				for (const field of Object.keys(NUMBER_RULES)) {
+					const warning = clampNumberField(field, draft[field]);
+					if (warning) out[field] = warning.text;
+				}
+				return out;
+			}, [draft]);
+
+			/** ⑥ 状态与日志组的内容（纯展示 + 现有日志组件）。 */
+			const renderStatusGroup = React.useCallback(
+				() =>
+					h(
+						"div",
+						{ className: "xiaoai-status-group" },
+						renderRecent(status),
+						h(
+							"div",
+							{ className: "xiaoai-bind-info" },
+							InfoRow("会话 ID", isBlank(status && status.sessionId) ? "未绑定" : String(status.sessionId)),
+							InfoRow(
+								"工作区路径",
+								isBlank(status && status.workspacePath) ? "未知" : String(status.workspacePath)
+							),
+							InfoRow(
+								"绑定方式",
+								isBlank(status && status.boundVia) ? "未知" : String(status.boundVia)
+							)
+						),
+						renderLogs({
+							logsOpen,
+							logs,
+							logsLoading,
+							logsError,
+							onToggleLogs: () => setLogsOpen((open) => !open)
+						})
+					),
+				[status, logsOpen, logs, logsLoading, logsError]
+			);
+
 			const children = [
 				h("h2", { className: "xiaoai-heading", key: "heading" }, "小爱语音"),
 				renderStatusHeader(status),
@@ -2346,23 +4095,39 @@ const RPC_NS = "xiaoai";
 					{ className: "xiaoai-actions", key: "reonboard" },
 					Button("重新接入 / 更换音箱", () => setShowWizard(true))
 				),
-				renderSettingsForm({ draft, passwordRedacted, onDraftChange }),
-				renderActions({ busy, onSave, onRestart, onSpeak, onSelfTest, onApplyRecommended }),
+				renderSettingsForm({
+					draft,
+					passwordRedacted,
+					tokenRedacted,
+					passwordVisible,
+					onDraftChange,
+					openGroups,
+					onToggleGroup,
+					dirtyKeys,
+					fieldWarnings,
+					hostOptions,
+					hostOptionsError,
+					deviceModels,
+					renderStatusGroup
+				}),
+				renderActions({
+					busyAction,
+					dirtyCount: dirtyKeys.length,
+					onSave,
+					onRevert,
+					onRestoreDefaults,
+					onRestart,
+					onSpeak,
+					onSelfTest,
+					onApplyRecommended
+				}),
 				selfTestReply !== null
 					? h(
 							"p",
 							{ className: "xiaoai-selftest", key: "selftest" },
 							"自检回复：" + selfTestReply
 						)
-					: null,
-				renderRecent(status),
-				renderLogs({
-					logsOpen,
-					logs,
-					logsLoading,
-					logsError,
-					onToggleLogs: () => setLogsOpen((open) => !open)
-				})
+					: null
 			];
 
 			return h("section", { className: "xiaoai-section" }, children);
@@ -2588,6 +4353,8 @@ const RPC_NS = "xiaoai";
 				const NO_ARG_METHODS = new Set([
 					"status", "settings.get", "restart",
 					"onboarding.importScan", "onboarding.models", "settings.recommended",
+					// hostOptions() 无参 —— 漏了它网关会报 unexpected "args"
+					"hostOptions",
 				]);
 				const wantsArgs = !NO_ARG_METHODS.has(bare);
 
