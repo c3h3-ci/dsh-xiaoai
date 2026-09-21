@@ -408,6 +408,8 @@ export class XiaoaiRuntime {
   #diagEvents = 0;
   #stateDir = null;
   #sessionFile = null;
+  /** 已成功挂载预设的 agentCtx（WeakSet，防重复挂载导致 dsh-scope 报错）。 */
+  #mountedPresetScopes = null;
 
   // ── 音箱侧：AI 模式状态机 ──
   //
@@ -1120,14 +1122,27 @@ export class XiaoaiRuntime {
   async #mountPreset(agentCtx, preset) {
     const presets = this.#agentCtx?.agentPresets;
     if (!presets || typeof presets.mount !== "function") return false;
+    // 幂等：同一条 scope 不能挂两次 —— 第二次会抛
+    // "dsh-scope: scope key is already bound to a parent"。
+    // 用 WeakSet 记住挂过的 ctx（复用路径与 attach 路径会重复调用）。
+    if (!this.#mountedPresetScopes) this.#mountedPresetScopes = new WeakSet();
+    const key = agentCtx && typeof agentCtx === "object" ? agentCtx : null;
+    if (key && this.#mountedPresetScopes.has(key)) return true;
     try {
       const resolved = await presets.resolve(preset || undefined);
       if (!resolved?.id) return false;
       await presets.mount(agentCtx, resolved.id);
+      if (key) this.#mountedPresetScopes.add(key);
       this.log(`已挂载 Agent 预设: ${resolved.id}`);
       return true;
     } catch (err) {
-      this.log(`挂载 Agent 预设失败（忽略）: ${err?.message ?? err}`);
+      const msg = String(err?.message ?? err);
+      // 已被挂载过 = 等价于成功（复用场景下重复调用）
+      if (/already bound to a parent/i.test(msg)) {
+        if (key) this.#mountedPresetScopes.add(key);
+        return true;
+      }
+      this.log(`挂载 Agent 预设失败（忽略）: ${msg}`);
       return false;
     }
   }
