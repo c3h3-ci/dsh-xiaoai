@@ -26,7 +26,27 @@ window.__ModuleLoader__.load({
 		const NS = "dsh-xiaoai";
 
 		/** RPC 命名空间（契约 §4：客户端通过 ctx.remote.xiaoai.<method>() 调用）。 */
-		const RPC_NS = "xiaoai";
+				// ═══════════════════════════════════════════════════════════════════
+		// ⚠️⚠️⚠️ 重要：不要把 RPC 改成 ctx.remote.xiaoai ⚠️⚠️⚠️
+		//
+		// 这个改动【已经被回退过 3 次】，每次都会让 UI 报
+		//   「remote.xiaoai 在 10s 内未挂载」→ 用户以为插件坏了。
+		//
+		// 事实：ctx.remote.xiaoai **永远不会挂载**。
+		//   客户端的 remote 命名空间由 dsh-api-gateway 用 $mount() fork，
+		//   而 contribution 清单是硬编码的 19 个官方包，第三方没有扩展点
+		//   （dsh-api-remotes/lib/types/client/index.js:1-46；
+		//    官方 dsh-typert-loader/README.md:114 承认客户端发现机制未实现）。
+		//
+		// 正解：走 HTTP 直连 POST /api/xiaoai/<method>。
+		//   Gateway 对未注册 manifest 的服务有 SRC 回退
+		//   （resolveSrcDescriptor, dsh-api-gateway/lib/index.js:758-782），
+		//   该端点已实测可用。
+		//
+		// 若你正准备"优化"回 ctx.remote —— 请先读上面这两条源码引用。
+		// ═══════════════════════════════════════════════════════════════════
+
+const RPC_NS = "xiaoai";
 
 		/** RPC 方法名的公共前缀，用于剥出 remote.xiaoai 上的裸方法名。 */
 		const RPC_PREFIX = RPC_NS + ".";
@@ -2520,20 +2540,63 @@ window.__ModuleLoader__.load({
 				});
 			}
 
+			/**
+			 * 调用 xiaoai.* RPC —— 走【HTTP 直连】，不走 ctx.remote。
+			 *
+			 * 【为什么不用 ctx.remote.xiaoai】
+			 * 客户端的 remote 命名空间由 dsh-api-gateway 用 $mount() fork
+			 * （client.js:1564/1794），而 contribution 清单是硬编码的 19 个官方包，
+			 * 第三方没有扩展点（dsh-api-remotes/lib/types/client/index.js:1-46；
+			 * 官方 dsh-typert-loader/README.md:114 亦承认客户端发现机制未实现）。
+			 * 因此 `ctx.remote.xiaoai` 永远 undefined，老老实实等待只会白等 10 秒
+			 * 然后报「未挂载」——用户看到的就是登录失败。
+			 *
+			 * 而 Gateway 对未注册 manifest 的服务有 SRC 回退
+			 * （resolveSrcDescriptor, dsh-api-gateway/lib/index.js:758-782），
+			 * 所以 POST /api/xiaoai/<method> 可以直接工作（已实测）。
+			 *
+			 * 请求体形状（实测得出，少一个字段都会被判 bad-request）：
+			 *   { type:"client-request", rpcId, method:"xiaoai/<m>", payload:{args} }
+			 * 无参方法 payload.args 必须是 {}；有参方法用 {args:{...}}（形参名即 args）。
+			 */
 			const rpc = async (method, args) => {
-				const remote = await waitForNamespace();
-				if (remote === undefined) {
-					throw new Error(
-						"remote." + RPC_NS + " 在 " + NAMESPACE_WAIT_MS / 1000 + "s 内未挂载。" +
-						"请检查服务端插件是否加载成功（后端日志里应有「RPC 已注册: namespace=" + RPC_NS + "」）。"
-					);
-				}
+				// 兼容两种调用形式：'xiaoai.status' / 'xiaoai.settings.get'
 				const bare = method.startsWith(RPC_PREFIX) ? method.slice(RPC_PREFIX.length) : method;
-				const fn = remote[bare];
-				if (typeof fn !== "function") {
-					throw new Error("remote." + RPC_NS + "." + bare + " 不是函数");
+				const endpoint = RPC_NS + "/" + bare;
+
+				// 哪些方法没有形参 —— 它们的 payload.args 必须是空对象，
+				// 传 {args:{...}} 会被网关拒绝（unexpected "args"）。
+				const NO_ARG_METHODS = new Set([
+					"status", "settings.get", "restart",
+					"onboarding.importScan", "onboarding.models", "settings.recommended",
+				]);
+				const wantsArgs = !NO_ARG_METHODS.has(bare);
+
+				const rpcId = "xiaoai-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+				const res = await fetch("/api/" + endpoint, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					credentials: "same-origin",
+					body: JSON.stringify({
+						type: "client-request",
+						rpcId,
+						method: endpoint,
+						payload: { args: wantsArgs ? (args || {}) : {} }
+					})
+				});
+				let body;
+				try {
+					body = await res.json();
+				} catch {
+					throw new Error("网关返回了非 JSON 响应（HTTP " + res.status + "）");
 				}
-				return fn(args || {});
+				const result = body && body.result;
+				if (!result) throw new Error("网关响应缺少 result 字段");
+				if (result.ok === false) {
+					const err = result.error || {};
+					throw new Error(err.message || err.code || "RPC 调用失败");
+				}
+				return result.value;
 			};
 
 			const statusSource = createStatusSource(rpc);
