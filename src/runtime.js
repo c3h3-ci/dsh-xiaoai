@@ -1534,10 +1534,21 @@ export class XiaoaiRuntime {
         this.log(`轮询出错(${this.#consecutiveErrors}): ${msg}`);
         this.#patch({ lastError: msg, consecutiveErrors: this.#consecutiveErrors });
 
-        // 连续失败多半是 token 过期 —— 尝试从 HA 同步一次并重连。
-        // 第 3 次失败时动手，避免偶发抖动就触发重连。
-        if (this.#consecutiveErrors === 3 && this.#miStorePath) {
-          this.log("连续失败，尝试从 HA 同步凭据并重连…");
+        // 连续失败多半是 token 过期 —— 尝试一次凭据刷新并重连。
+        //
+        // 【2026-09-21 修复】原条件是 `consecutiveErrors === 3`（精确等于），
+        // 一旦那一次刷新失败（例如本机没有 HA 可同步），后面就**永远不会
+        // 再尝试** —— 实测出现「轮询出错(4633)」这种 4000+ 次的 401 空转，
+        // 期间用户完全用不了，日志也被刷爆。
+        //
+        // 改成**周期性重试**：第 3 次先试一次（覆盖偶发抖动），之后每 50 次
+        // 再试一次（给「密码重新登录」留出兜底机会）。不是每次都试，
+        // 是为了避免把小米账号打到风控。
+        const shouldTryRefresh =
+          this.#consecutiveErrors === 3 ||
+          (this.#consecutiveErrors > 3 && this.#consecutiveErrors % 50 === 0);
+        if (shouldTryRefresh && this.#miStorePath) {
+          this.log(`连续失败 ${this.#consecutiveErrors} 次，尝试刷新凭据并重连…`);
           try {
             const r = mergeFreshTokens(this.#miStorePath, this.#config.userId, (m) => this.log(m));
             this.log(r.refreshed ? "凭据已更新，重连中" : `凭据未更新（${r.reason}）`);
@@ -1581,6 +1592,36 @@ export class XiaoaiRuntime {
           } catch (e) {
             this.log(`凭据同步失败: ${e?.message ?? e}`);
           }
+        }
+
+        // 401 持续无法自愈时，明确告诉用户该怎么办（而不是默默空转）。
+        //
+        // 【2026-09-21 新增】实测出现过「轮询出错(4633)」这种四千多次 401 空转：
+        // 本机没有 HA 可同步凭据，而 vendor 缓存的 serviceToken 已过期，
+        // 插件既不会退回密码登录，也不提示用户，就这样一直转到天亮。
+        //
+        // 这里在连续失败达阈值时：
+        //   1) 把状态标成 error（UI 会变红，用户一眼能看到）
+        //   2) 通过音箱播报一次明确指引
+        //   3) 之后自动暂停轮询（不再空转刷日志），等用户重新保存凭据
+        //
+        // 刻意【不做自动重登】：历史上「刷新成功→重启→又失败→又刷新」的
+        // 循环曾把整机打死（见上方注释）。让用户显式操作一次，比机器
+        // 自作聪明地反复重启安全得多。
+        const AUTH_ERROR_LIMIT = 30;
+        const looksLikeAuth = /\b401\b|\b403\b|unauthor|未授权|认证失败/i.test(msg);
+        if (looksLikeAuth && this.#consecutiveErrors >= AUTH_ERROR_LIMIT) {
+          const hint =
+            "小米账号登录已过期，且在自动重试后仍无法恢复。请在面板里重新保存一次账号密码。";
+          this.log(`连续 ${this.#consecutiveErrors} 次鉴权失败，暂停轮询等待人工处理`);
+          this.#patch({ phase: "error", lastError: hint });
+          try {
+            await this.#safeSay("小米账号登录过期了，请在设置面板重新保存一次账号密码");
+          } catch {
+            /* 播报失败不影响停止 */
+          }
+          this.#stopped = true;
+          return;
         }
 
         if (this.#consecutiveErrors === 5) {
