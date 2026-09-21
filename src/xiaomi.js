@@ -72,18 +72,45 @@ export class XiaomiSpeaker {
   #emptyStreak = 0;
   lastSpoken = null;
 
-  constructor({ userId, password, did, miStorePath, logger }) {
+  constructor({ userId, password, did, miStorePath, logger, sharedNa, storeOverride }) {
     this.userId = userId;
     this.password = password;
     this.did = did;
     this.miStorePath = miStorePath;
     this.log = logger ?? (() => {});
+    /**
+     * ── 多音箱（设计 §4.2 / §4.3）──
+     *
+     * `sharedNa`  —— 共享的 MiNA 连接。对话接口是**账号级**的
+     *   （`getConversations` 只接受 limit/timestamp，deviceId 仅做 cookie
+     *   存在性校验，值随便填结果都一样 —— 已实测，见设计 §2.2），
+     *   因此 N 台音箱只需一份 MiNA。传进来即复用，不传则自建。
+     *
+     * `storeOverride` —— 本设备**独占的凭据 store 副本**（防线 D）。
+     *   不传时 vendor 走原来的「读全局文件 → 登录 → 写回全局文件」路径，
+     *   与改造前逐字节等价。
+     *   ⚠️ 调用方必须传 `structuredClone` 出来的独立副本。若把同一个对象
+     *   引用传给 N 个设备，`store[service] = account` 仍会在内存里互相
+     *   覆盖 —— 竞态只是从文件搬到了内存，破坏力完全相同。
+     */
+    this.sharedNa = sharedNa ?? null;
+    this.storeOverride = storeOverride ?? null;
     // ⚠️ vendored 的 mi-service-lite 在【模块导入时】就把 kConfigFile 定死了
     // （`var kConfigFile = process.env.XIAOAI_MI_STORE || ".mi.json"`），
     // 之后再设环境变量无效。因此调用方必须在 import 之前设好，
     // 这里只做一次显式校验，避免"看起来设了其实没生效"的静默失败。
     this.storePathHonored =
       !miStorePath || process.env.XIAOAI_MI_STORE === miStorePath;
+  }
+
+  /** 共享的 MiNA 连接（供运行时集中拉取对话）。 */
+  get na() {
+    return this.#na;
+  }
+
+  /** 本实例绑定的设备信息（connect 成功后可用）。 */
+  get device() {
+    return this.#device;
   }
 
   /** 建立 MiNA / MiIOT 连接。凭据来自 .mi.json（已绕过密码登录）。 */
@@ -127,7 +154,20 @@ export class XiaomiSpeaker {
       did: this.did,
       timeout: 15000,
     };
-    this.#na = await getMiNA(cfg);
+    // ── 防线 D：注入本设备独占的 store 副本（设计 §4.3）──
+    // 注入后 vendor 既不读也不写全局 .mi.json，消除「N 台并发连接互相
+    // 覆盖 account.device」的竞态（那会导致命令发到错误的音箱）。
+    if (this.storeOverride) cfg.storeOverride = this.storeOverride;
+
+    // ── MiNA：账号级接口，N 台音箱共享一份（设计 §4.2）──
+    // 对话接口不看 device（实测 deviceId 仅做 cookie 存在性校验），
+    // 因此共享完全安全，且能把网络开销压到 1 份。
+    if (this.sharedNa) {
+      this.#na = this.sharedNa;
+    } else {
+      this.#na = await getMiNA(cfg);
+    }
+    // ── MiIOT：设备级，必须每台一个（ubus/TTS 用 account.device 定目标）──
     this.#iot = await getMiIOT(cfg);
     // ⚠️ 必须区分「哪一份失败了」—— 原来的统一文案「检查 .mi.json 凭据」会误导用户。
     //
@@ -153,6 +193,16 @@ export class XiaomiSpeaker {
       );
     }
     this.#device = await this.#resolveDevice();
+    // ── 防线 B：校验 MiIOT 实际绑定的就是本设备（fail-fast，设计 §4.3）──
+    //
+    // 为什么必须有：即便做了防线 D，`getMiIOT` 内部仍按 did 从设备列表
+    // 里 find 一台并写进 `account.device`。若并发/缓存导致它绑到了**别的**
+    // 音箱，表现是「A 的回复从 B 的嘴里念出来」—— 静默且极难排查。
+    //
+    // 校验让问题在**连接时**就暴露，而不是等到某天用户听到串台。
+    // 刻意**不做**「校验失败就静默重绑」：重绑会掩盖竞态根因，
+    // 让下一次换个路径再炸（设计 §4.3 防线 B 的注释明确论证过）。
+    this.#verifyBoundDevice();
     const model = String(this.#device?.hardware ?? "").toUpperCase();
     // 型号 → 指令集：走 onboarding 的完整兼容表（19 个型号），
     // 未收录型号回落到默认值并在日志里【明确说出来】—— 静默用默认指令
@@ -175,6 +225,40 @@ export class XiaomiSpeaker {
     }
     this.log(`已连接音箱: ${this.#device?.name} (${model}) tts=${JSON.stringify(cmds.tts)}`);
     return this.#device;
+  }
+
+  /**
+   * 防线 B：确认 MiIOT 的 `account.device` 就是本实例要求的设备。
+   *
+   * 播报走 `ubus`，而 `ubus` 的目标取自 `account.device.deviceId` ——
+   * 一旦它指向别的音箱，我们的每一句话都会从错误的设备念出来。
+   *
+   * 判定用「宽匹配」：用户配置里可能填的是 miotDID / deviceID / 名称
+   * 三种形态之一，所以只要**任一标识**与本实例的 did 相符即通过。
+   * 只有在确实比对不上、且两边都有值时才算失败 —— 拿不到 device
+   * （某些部署/降级路径）不算失败，否则会把能用的场景误杀。
+   */
+  #verifyBoundDevice() {
+    const bound = this.#iot?.account?.device;
+    if (!bound) {
+      // 拿不到 binding 信息：不阻断（可能是 vendor 降级路径），但要留痕。
+      this.log("未能读取 MiIOT 绑定设备信息，跳过归属校验（若出现串台请检查凭据）");
+      return;
+    }
+    const wanted = String(this.did ?? "").trim();
+    if (!wanted) return;
+    const candidates = [bound.deviceId, bound.deviceID, bound.miotDID, bound.did, bound.name, bound.alias]
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+    if (candidates.length === 0) return; // 没有可比对的字段 → 不误杀
+    if (candidates.includes(wanted)) return;
+
+    // 也可能用户填的是名称，而 bound 的 name 与 settings 里的 name 对应 ——
+    // 上面的 candidates 已含 name/alias，因此走到这里说明确实不符。
+    throw new Error(
+      `连接绑定到了错误的设备（期望 ${wanted}，实际 ${candidates[0]}）—— ` +
+        `可能是并发连接导致的凭据串台（见多音箱设计的防线 D），请重试。`,
+    );
   }
 
   /**

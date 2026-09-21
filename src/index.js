@@ -259,6 +259,41 @@ function buildSettingsSchema(z) {
     /** 音箱设备 ID 或米家名称。 */
     did: z.string().default(DEFAULTS.did),
 
+    // ── 多音箱（设计 §3.2）──
+    //
+    // `speakers[]` 是权威的设备列表；上面的 `did` 退化为**兼容投影**
+    // （恒等于 speakers[0].did）。老配置只有 did 时由
+    // `normalizeSettings()` 读时合成，**不做磁盘迁移** —— 幂等、可回滚。
+    //
+    // ⚠️ 覆盖项一律 nullable 且默认 null：null = 继承全局。
+    //   `""` 与 `[]` 是**有效覆盖值**，读取时用 `??` 绝不回退（风险 R9）。
+    speakers: z
+      .array(
+        z.object({
+          /** 设备标识（miotDID，MiGPT/xiaogpt/runtime 三家通用）。 */
+          did: z.string().default(""),
+          /** 展示名；从 discoverSpeakers 回填。 */
+          name: z.string().default(""),
+          /** 硬件型号（如 "OH2P"）；决定 TTS 指令集。 */
+          model: z.string().default(""),
+          /** MiNA 侧设备标识（deviceID）；播报目标用。 */
+          deviceId: z.string().default(""),
+          /** 用户手动停用该设备。 */
+          enabled: z.boolean().default(true),
+          // ── 每设备覆盖（null = 继承全局）──
+          workspace: z.string().nullable().default(null),
+          agentPreset: z.string().nullable().default(null),
+          provider: z.string().nullable().default(null),
+          /** 启动时设定该设备音量（0-100）。 */
+          volume: z.number().nullable().default(null),
+          /** 覆盖全局唤醒词。空数组 = 这台不要唤醒词（有效覆盖）。 */
+          wakeUpKeywords: z.array(z.string()).nullable().default(null),
+        }),
+      )
+      .default([]),
+    /** 配置 schema 版本（v1 = 单 did，v2 = speakers[]）。 */
+    settingsVersion: z.number().default(2),
+
     // ── 首次接入向导（onboarding）写入的字段 ──
     //
     // ⚠️ 只【新增】字段，不动 workspace/agentPreset/model 等既有字段。
