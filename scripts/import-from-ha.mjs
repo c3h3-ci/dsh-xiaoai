@@ -106,8 +106,12 @@ const toSegment = (src, sid) => src && src.service_token ? {
   sid,
   serviceToken: src.service_token,
   deviceId: src.device_id ?? "",
-  device: { deviceId: src.device_id ?? "", hardware: args.hardware ?? "", did: args.did ?? "" },
+  // hardware / did 必须非空 —— vendor 的 getConversations 用 hardware 作查询
+  // 参数，空值会被小米判 400（每 4 秒空转一次）。HA 的 auth 文件没有这两项，
+  // 必须由 --did / --hardware 传入。
+  hardware: args.hardware ?? "",
   did: args.did ?? "",
+  device: { deviceId: src.device_id ?? "", hardware: args.hardware ?? "", did: args.did ?? "" },
   pass: { ssecurity: src.ssecurity ?? "", passToken: "" },
 } : undefined;
 

@@ -718,8 +718,15 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
         }
 
         // ── 3. 没指定 → 用当前配置的账号 ──
+        //
+        // ⚠️ ssecurity 在 store.pass.ssecurity，**不在顶层**！
+        // 写成 store?.ssecurity 会永远取到 undefined → hasToken=false
+        // → 退化成账号密码登录 → 触发小米异地登录风控 → 返回 0 个设备
+        // （实测踩过：明明凭据可用、probeSpeakers 直调能列出音箱，
+        //   RPC 却报「检测到异地登录」。）
+        // 对照 onboarding.js:194 的正确写法：node.pass?.ssecurity。
         const store = readCurrentStoreNode();
-        const hasToken = Boolean(store?.serviceToken && store?.ssecurity);
+        const hasToken = Boolean(store?.serviceToken && store?.pass?.ssecurity);
         const userId = String(view.userId ?? "") || String(store?.userId ?? "");
         const pwd = String(store?.password ?? "") || String(view.password ?? "");
         if (!hasToken && (!userId || !pwd)) {

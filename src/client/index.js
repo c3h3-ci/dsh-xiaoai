@@ -1813,6 +1813,8 @@ const RPC_NS = "xiaoai";
 			const [manualDid, setManualDid] = React.useState("");
 			const [speakers, setSpeakers] = React.useState(null);
 			const [speakerDid, setSpeakerDid] = React.useState(null);
+			/** 已选音箱的型号（用于补齐导入凭据的 hardware 字段）。 */
+			const [speakerModel, setSpeakerModel] = React.useState(null);
 			const [authUrl, setAuthUrl] = React.useState(null);
 			// 从远程 HA 导入凭据所需的连接信息
 			const [haHost, setHaHost] = React.useState("");
@@ -1821,13 +1823,26 @@ const RPC_NS = "xiaoai";
 			const [doneSummary, setDoneSummary] = React.useState(null);
 			const [testResult, setTestResult] = React.useState(null);
 
-			/** 统一的 RPC 调用：解包 {ok,value} 并抛出可读错误。 */
+			/**
+			 * 统一的 RPC 调用。
+			 *
+			 * ⚠️ 不要再套 unwrap()！本文件的 rpc() 是 HTTP 直连实现，它
+			 * **已经解包过一层**（返回网关响应的 result.value，并在
+			 * result.ok === false 时抛错）。早期 rpc() 返回的是网关原始
+			 * 信封 {ok,value}，那时才需要 unwrap。
+			 *
+			 * 两者叠加的后果：服务端业务数据若自身带 ok 字段（例如
+			 * onboarding.importFromHa 返回 {ok:true, summary:{…}}），
+			 * unwrap 会把它误认成信封、去取 .value —— 取到 undefined，
+			 * UI 于是显示「导入失败」，而后端明明返回了成功。
+			 * （实测踩过：直接 fetch 该端点返回 ok:true，UI 却报失败。）
+			 */
 			const call = React.useCallback(
 				async (method, args) => {
 					if (typeof rpc !== "function") {
 						throw new Error("rpc 不可用：inject 未提供 rpc 函数");
 					}
-					return unwrap(await rpc(method, args || {}));
+					return rpc(method, args || {});
 				},
 				[rpc]
 			);
@@ -2025,12 +2040,16 @@ const RPC_NS = "xiaoai";
 				}
 				setWizardBusy(true);
 				try {
+					// did / hardware 必须传 —— 导入的凭据缺这两项会让 vendor 的
+					// getConversations 用空 hardware 查询，被小米判 400（每 4 秒空转）。
+					// 此时往往尚未选音箱，因此留空并在下一步由「接通并测试」补全；
+					// 若用户已选过音箱则直接带上。
 					const result = await call("xiaoai.onboarding.importFromHa", {
 						host: haHost.trim(),
 						user: haUser.trim() || "root",
 						password: haPassword,
 						did: speakerDid || undefined,
-						hardware: undefined,
+						hardware: speakerModel || undefined,
 					});
 					if (!result || !result.ok) {
 						setWizardError((result && result.error) || "导入失败");
@@ -2385,7 +2404,7 @@ const RPC_NS = "xiaoai";
 						.then((result) => {
 							if (cancelled) return;
 							try {
-								setLocalStatus(unwrap(result));
+								setLocalStatus(result)  // rpc() 已解包，勿再 unwrap;
 							} catch (error) {
 								/* 轮询失败静默：下一 tick 会重试。 */
 							}
@@ -2435,7 +2454,7 @@ const RPC_NS = "xiaoai";
 			const refresh = () => {
 				Promise.resolve(rpc("xiaoai.status", {}))
 					.then((result) => {
-						snapshot = unwrap(result);
+						snapshot = result;  // rpc() 已解包，勿再 unwrap
 						emit();
 					})
 					.catch((error) => {
@@ -2581,7 +2600,19 @@ const RPC_NS = "xiaoai";
 						type: "client-request",
 						rpcId,
 						method: endpoint,
-						payload: { args: wantsArgs ? (args || {}) : {} }
+						// ⚠️ 参数形状按服务端签名分两类
+						// （Gateway 的 SRC 回退把【形参名】当线字段，
+						//   而本插件所有有参方法的形参都叫 args）：
+						//   · 无参方法 status()/settingsGet()/restart() 等
+						//     → payload.args 必须是 {}，多一个字段就报
+						//       `args fields do not match the descriptor: unexpected "args"`
+						//   · 有参方法 login(args)/importFromHa(args) 等
+						//     → payload.args 形如 { args: <真正参数> }
+						// 实测对照（都踩过）：
+						//   无参 {args:{args:{}}}    → unexpected "args"
+						//   有参 {args:{host:…}}     → unexpected "host"
+						//   有参 {args:{args:{…}}}   → ok
+						payload: { args: wantsArgs ? { args: args || {} } : {} }
 					})
 				});
 				let body;
