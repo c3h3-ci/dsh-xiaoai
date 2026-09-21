@@ -482,3 +482,311 @@ CSS 已送达:        .xiaoai-diagnosis 等 5 条规则在注入的 <style> 中 
   该文件不在本任务写作范围内（只允许改 `src/client/index.js`）。
   客户端已通过规则优先级规避了误分类，但**服务端日志里那句"检查凭据"
   仍然误导**。建议后续单独修：区分 `!na` 与 `!iot` 两种情况，分别给文案。
+
+---
+
+# 追加改造：三个来自 dsh-im 对比的改进（task-6）
+
+**日期**：2026-09-21
+**来源**：`c3h3-dsh-im/plugin-src/client/` 的三个实现对比筛选
+**范围**：仅 `src/client/index.js`（未动 `inject`、未动多音箱）
+
+这三项都源自**验收报告发现的真实问题**，不是凭空加功能：
+
+| # | 项 | 来源 | 解决的已知问题 |
+|---|---|---|---|
+| 1 | 并发版本栅栏 | `workspace-snapshot-fence.js` | `ui-acceptance.md` 诚实性说明 #3 的 P2 |
+| 2 | 回环地址恢复 | `loopback-recovery.js` | 浏览器对本机请求的额外校验（403 类） |
+| 3 | 焦点管理 | `workspace-editor.js` | 弹层关闭后焦点丢失（无障碍） |
+
+---
+
+## 1. 并发版本栅栏 ⭐⭐⭐
+
+### 问题
+
+`xiaoai/settings.update` 一直**带 revision 乐观锁**（服务端 `src/rpc.js:340-346`
+把 `SettingsConflictError` 翻译成 `xiaoai/settings-conflict`），
+但客户端**从不把冲突告诉用户**：
+
+```javascript
+// 改造前 —— 用户只看到一句看不懂的英文原文
+catch (error) {
+  setNotice({ kind: "error", text: "保存失败：" + describeError(error) });
+}
+```
+
+验收员的原话（`ui-acceptance.md:380-384`）：
+
+> 我用原生 setter 改 `<select>` 后触发的保存携带了**过期 revision**，被后端拒绝。
+> ……该现象提示：**并发编辑（多标签页/多端）时 UI 缺少「版本冲突」的用户可见提示**
+
+用户体验就是「点了保存，但值又变回去了」，完全不知道发生了什么。
+
+### 实现
+
+**(a) 栅栏本身** —— `useSettingsFence()`，照搬 dsh-im 的记账模型：
+
+```
+beginStatus()         记下读的版本（有写在途时返回 null，表示这份读不可信）
+canCommitStatus(v)    这份读响应还能落地吗（版本没变 且 没有写在途）
+beginMutation()       发起写：version++（任何在途响应就此过期）
+canCommitMutation(v)  这份写响应还是最新的吗
+endMutation()         写结束
+```
+
+用 `useRef` 而不是 `useState` —— 栅栏只是并发记账，**不该触发重渲染**。
+dsh-im 用 `useMemo(() => Object.freeze({...}), [])` 稳定引用，这里照做。
+
+**(b) 接进读路径** —— `loadSettings` 里守卫：
+
+```javascript
+const fenceVersion = fence.beginStatus();
+const result = await call("xiaoai.settings.get", {});
+if (!fence.canCommitStatus(fenceVersion)) return;   // ← 陈旧响应直接丢弃
+```
+
+**解决的问题**：慢的 `settings.get` 响应回来时，若用户已经点了保存，
+旧值会把刚保存的值又刷回界面 —— 这正是验收员观察到的「值又变回去」的机制之一。
+
+**(c) 接进写路径** —— `onSave` 里分类处理：
+
+```javascript
+const fenceVersion = fence.beginMutation();
+try { /* ... */ }
+catch (error) {
+  if (isSettingsConflict(error)) {
+    setNotice({ kind: "conflict", action: "reload", text: "配置已被其他地方修改…" });
+  } else {
+    setNotice({ kind: "error", text: "保存失败：" + describeError(error) });
+  }
+} finally { fence.endMutation(); }
+```
+
+**(d) 错误码必须活到客户端** —— 这是**最容易漏的一环**。
+原 `rpc()` 在网关返回 `ok:false` 时这样抛：
+
+```javascript
+throw new Error(err.message || err.code || "RPC 调用失败");   // ⚠️ code 被丢了！
+```
+
+丢掉 `code` 的后果：`isSettingsConflict()` 无从判断，
+冲突就退化成「保存失败：<英文原文>」—— **功能等于没做**。
+现在改为把它挂回 Error：
+
+```javascript
+const failure = new Error(err.message || err.code || "RPC 调用失败");
+if (err.code) failure.code = err.code;
+if (err.details !== undefined) failure.details = err.details;   // 冲突的 expected/actual 在这里
+throw failure;
+```
+
+**踩坑记录**：`details` 不是 `data`。实测 `xiaoai/settings.update` 的
+`RemoteError` 形状是 `{code, message, details:{expected, actual}}` ——
+我最初按 `data` 写，取不到值（虽然不影响提示文案，但属于事实错误，已改）。
+
+**(e) 提示要带动作** —— 冲突提示不只是文字，还内嵌一个「重新加载设置」按钮
+（`onReloadSettings`），点了就重新拉最新 revision + 服务端真值。
+只丢一句「请刷新后重试」等于把活推回给用户。
+
+### 浏览器实测（**真实冲突，非模拟**）
+
+```
+1. 浏览器面板持有 revision=6
+2. 用 curl 从"另一个客户端"写入 → 服务端推进到 revision=7
+   （模拟"另一个标签页/手机先改了"）
+3. 在面板改字段 maxReplyChars=455，点「保存」
+   → 出现 .xiaoai-conflict：
+     "配置已被其他地方修改（可能是另一个标签页或手机），你的这次保存没有生效。
+      请先重新加载最新配置，再重试。" + 按钮「重新加载设置」
+   （.xiaoai-error 不存在 → 说明**没有**退化成通用错误）
+4. 点「重新加载设置」
+   → "已重新加载最新配置，可以再次修改并保存。"
+   → 输入框变成 477（**外部客户端写的值**）、脏点清空
+5. 再改 488 → 保存 → "设置已保存。"
+6. 后端核对：maxReplyChars === 488，revision === 8   ✅
+```
+
+**这是完整的闭环**：冲突 → 明确提示 → 一键恢复 → 再存成功。
+第 4 步尤其关键 —— 拉回的是**外部写入的值**，证明 revision 与真值都刷新了。
+
+---
+
+## 2. 回环地址恢复 ⭐⭐
+
+### 问题
+
+浏览器对 `http://127.0.0.1` 有额外的「本机/私网请求」校验（PNA 策略）。
+某些环境下同源 fetch 也会被拒，而 `dsh-client-connection` 会把它包成：
+
+```
+transport failure for /api/xiaoai/<method>: HTTP 403
+```
+
+（`dsh-client-connection/lib/client.js:1131` 的 throw 点 —— 我去读了源码确认格式）
+
+用户看到的就是「网络错误」，但**真正的原因只是地址不对**。
+
+### 实现
+
+**(a) 精确判定** —— `createLoopbackRecovery(error, href)`，只认这一种签名：
+
+```javascript
+/^transport failure for \/[A-Za-z0-9._~-]+\/[A-Za-z0-9_$.\/~-]+: HTTP 403$/
+```
+
+**只处理 IPv4 回环**（`127.x.x.x`）：其他主机名换成 localhost 可能解析到别处，
+不是修复而是引入新故障。命中后：
+
+```javascript
+url.hostname = "localhost";   // 127.0.0.1 → localhost
+```
+
+**(b) 接到 rpc()** —— 两条路径都覆盖：
+
+```
+路径 A：fetch 直接 reject（CORS / PNA 拦截 / 连接被拒）  → catch 分支判定
+路径 B：服务端/网关回 403                                → res.ok===false 时判定
+```
+
+**踩坑记录（我自己引入又修掉的 bug）**：
+最初路径 B 只是「发布恢复信号」，然后继续往下 `res.json()`。
+但 **403 的响应体通常是空的** —— 硬解析会抛 `SyntaxError`，
+被后面的兜底分支翻译成「网关返回了非 JSON 响应（HTTP ?）」，
+**把真正的原因盖掉了**。实测时看到这句才发现。
+
+现在路径 B 判定成功就**直接抛恢复错误**，不再尝试解析 body：
+
+```javascript
+if (!res.ok && res.status === 403) {
+  const recovery = createLoopbackRecovery(simulated);
+  if (recovery) { publish(recovery); throw presented; }   // ← 直接抛，不解析
+}
+if (!res.ok) throw new Error("网关返回 HTTP " + res.status + "（" + endpoint + "）");
+```
+
+**(c) rpc → UI 的信号通路** —— rpc() 在闭包里、UI 在组件里，用一个小订阅槽连接：
+
+```javascript
+let loopbackRecovery = null;
+const loopbackListeners = new Set();
+publishLoopbackRecovery(r)   // 去重：同一个 url 不重复推，避免轮询刷屏
+subscribeLoopbackRecovery(l) // 立即回放一次（组件挂载晚于首次失败也能看到）
+```
+
+**为什么不用 React state**：`rpc()` 可能在组件挂载**之前**就被调用
+（`createStatusSource` 首次 `getSnapshot`），那时还没有 setState 可调。
+
+**(d) 界面**：横幅 + 「改用 localhost 重新打开」（primary） + 「忽略」。
+跳转用 `location.replace` 而不是 `assign` —— 不把已知有问题的地址留在
+浏览历史里，否则用户点「后退」又回到坏状态。
+
+### 浏览器实测
+
+**未能自然复现**（本机请求是成功的）。用 fetch 拦截模拟了两种形态：
+
+```
+形态 A（fetch reject，更贴近真实 PNA 行为）：
+  拦截 /api/xiaoai/* → Promise.reject(new Error("transport failure for /api/…: HTTP 403"))
+  → 横幅出现：
+    "当前地址（http://127.0.0.1:3080）与浏览器的本机请求校验不兼容，导致请求被拒绝。"
+  → 按钮 ["改用 localhost 重新打开", "忽略"]，目标 title="http://localhost:3080/"  ✅
+  → 保存报错文案也清晰："保存失败：当前地址与浏览器的本机请求校验不兼容。
+     请使用上方按钮改用 localhost 重新打开。（loopback-recovery-required）"   ✅
+     （修掉 bug 之前这里是"非 JSON 响应" —— 印证了上面的踩坑记录）
+
+形态 B（服务端回 403）：同样出横幅，目标 URL 正确           ✅
+点「忽略」→ 横幅消失，面板仍健康（445 个元素）              ✅
+```
+
+⚠️ **诚实标注**：**真实浏览器 PNA/CORS 拦截未复现**（本机环境产生不了）。
+验证的是「判定逻辑 + 两条错误路径 + 界面渲染 + 跳转 URL 计算」。
+
+---
+
+## 3. 焦点管理 ⭐
+
+### 问题
+
+弹层/大块内容关闭后，焦点掉到 `<body>`，键盘用户得从头 Tab 一遍
+（WCAG 2.4.3 焦点顺序）。
+
+### 实现
+
+照搬 dsh-im 的 `queueMicrotask` 手法：
+
+```javascript
+function scheduleFocus(ref) {
+  queueMicrotask(() => {
+    const node = ref && ref.current;
+    if (node && typeof node.focus === "function") node.focus();
+  });
+}
+```
+
+**为什么是 `queueMicrotask`**：调用点通常在 `setState` 之前，
+此刻 DOM 还没提交，目标按钮可能已被卸载重建 —— 直接 `.focus()`
+会落到旧节点上（表现为「焦点还是丢了」）。微任务在本次渲染提交后运行。
+
+两个场景：
+
+```
+① 向导    「重新接入 / 更换音箱」(ref) → 向导 → 「关闭向导」/「进入设置」
+          → closeWizard()：setShowWizard(false) + scheduleFocus(wizardTriggerRef)
+② 日志    「查看日志」(ref) → 展开 → 「收起日志」→ scheduleFocus(logsTriggerRef)
+```
+
+顺带给 `Button()` 加了 `options.ref` 透传，并给日志切换按钮补了
+`aria-expanded`（顺手的无障碍改进）。
+
+**一个刻意的顺序调整**：`closeWizard` 一开始定义在 `showWizard` 声明**之前**。
+虽然回调只在挂载后执行、实际不会踩 TDZ，但那依赖隐式时序 ——
+已把它挪到 `showWizard` 之后，让顺序在源代码层面就是安全的。
+
+### 浏览器实测
+
+```
+① 向导：点「重新接入 / 更换音箱」→ 向导出现（h3="接入小米音箱"）
+        → 点「关闭向导」→ 向导消失
+        → document.activeElement === 那个触发按钮
+          {activeTag:"BUTTON", activeText:"重新接入 / 更换音箱", isTriggerButton:true}   ✅
+
+② 日志：展开「⑥ 状态与日志」→ 点「查看日志」→ .xiaoai-logs 出现，aria-expanded="true"
+        → 点「收起日志」→ .xiaoai-logs 消失，aria-expanded="false"
+        → document.activeElement === 「查看日志」按钮  {focusIsToggle:true}              ✅
+```
+
+---
+
+## 未测 / 已知限制（诚实标注）
+
+| 项 | 状态 |
+|---|---|
+| 真实浏览器 PNA/CORS 拦截 | ⚠️ **未复现**（本机产生不了），用 fetch 拦截模拟 |
+| 多标签页**真实**并发 | ⚠️ 用"curl 模拟第二个客户端"代替；真实双标签页未测 |
+| Revert 按钮在冲突后的语义 | ⚠️ 未测（冲突后点「撤销修改」应回到 baseline，未验证） |
+| 焦点在**首次接入**向导（notConfigured=true）的退出 | ⚠️ 未测 —— 该分支没有"关闭向导"按钮（无出口，属既有设计），焦点管理不适用 |
+
+## 安全边界（本次改动遵守的约束）
+
+- ✅ **只改了 `src/client/index.js`**（+ 本文件）
+- ✅ **`inject` 数组未动**（仍是 `["slots","remote"]`）
+- ✅ **未做多音箱改造**（那是 task-5/task-7）
+- ✅ **未重启 DSH**（构建后浏览器硬刷新即生效，插件是软链）
+- ✅ 无新增依赖、无新增 RPC 端点（纯客户端行为改进）
+
+## 回归确认
+
+```
+node --check src/client/index.js     ✅ 语法通过
+node scripts/build.mjs               ✅ 已同步 10 个文件 + 断链自检通过
+浏览器硬刷新后                        ✅ 面板 442 个元素 / 6 组齐全 / 无 React #310
+正常保存链路                          ✅ 改 488 → 保存成功 → 后端 revision=8 确认
+控制台                                ✅ 仅 2 条宿主 shell 的已知 P2-1 报错（与本插件无关）
+```
+
+**Hook 规则**：本次新增 `useSettingsFence()` / `useState(recovery)` /
+两个 `useRef` / 一个 `useEffect` / 两个 `useCallback`，
+**全部在 `if (wizardActive) return` 之前**（该 early return 在文件 4477 行附近，
+新 Hook 都在 3760-3810 之间）。已用静态扫描确认，并由浏览器实测确认无 #310
+—— 但按前一位实施者的教训，**静态检查不足以证明**，真正的证据是上面的浏览器实测。
