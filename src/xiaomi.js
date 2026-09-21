@@ -129,7 +129,29 @@ export class XiaomiSpeaker {
     };
     this.#na = await getMiNA(cfg);
     this.#iot = await getMiIOT(cfg);
-    if (!this.#na || !this.#iot) throw new Error("小米登录失败（检查 .mi.json 凭据）");
+    // ⚠️ 必须区分「哪一份失败了」—— 原来的统一文案「检查 .mi.json 凭据」会误导用户。
+    //
+    // 背景：小米云有两个服务，各需独立凭据（见 docs/CREDENTIALS.md）：
+    //   MiNA  (sid=micoapi)  → 拉对话
+    //   MiIOT (sid=xiaomiio) → TTS 播报 / 唤醒 / 音量
+    // 实测最常见的故障是【只有 micoapi、缺 xiaomiio】：此时 MiNA 是好的、
+    // 登录本身毫无问题，用户照「检查凭据」的提示去重新登录【根本修不好】。
+    // 分开报文案，用户才知道该做什么。
+    if (!this.#na && !this.#iot) {
+      throw new Error(
+        "小米两份凭据都不可用（拉对话 micoapi + 控制音箱 xiaomiio）。请到设置面板点「从 HA 导入」或「重新接入」补齐。",
+      );
+    }
+    if (!this.#na) {
+      throw new Error(
+        "缺少「拉对话」凭据（micoapi）—— 听不到你说话。请在设置面板重新导入（需要 micoapi 与 xiaomiio 两份）。",
+      );
+    }
+    if (!this.#iot) {
+      throw new Error(
+        "缺少「控制音箱」凭据（xiaomiio）—— 能听到你说话但无法播报。请在设置面板重新导入（需要 micoapi 与 xiaomiio 两份）。",
+      );
+    }
     this.#device = await this.#resolveDevice();
     const model = String(this.#device?.hardware ?? "").toUpperCase();
     // 型号 → 指令集：走 onboarding 的完整兼容表（19 个型号），
