@@ -171,12 +171,19 @@ export function cleanForSpeech(text) {
     /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu,
     ""
   );
-  // 13. 归整空白
+  // 13. 归整空白与标点
   s = s.replace(/[ \t]{2,}/g, " ");
-  s = s.replace(/\n{2,}/g, "；"); // 段落之间用停顿词连起来，避免 TTS 直接跳过
+  // 【2026-09-21 修复】段落间原来用「；」连接，但：
+  //   · 中文的「；」在 TTS 里是明显长停顿，连续两个听起来很怪
+  //   · 原文（尤其是列表型回复）本身常带「；」，叠加后出现「。；」「：；」
+  //   实测用户听到的是「…想表达什么。；您是想说：；「我以为你知道」…」
+  // 改用句号断句 —— 更自然，也不会和正文标点打架。
+  s = s.replace(/\n{2,}/g, "。");
   s = s.replace(/\n/g, "，");
-  s = s.replace(/^[，、；\s]+|[，、；\s]+$/g, "");
-  s = s.replace(/[，、；]{2,}/g, "，");
+  // 清理标点叠加（。；、：；、；；等）与首尾多余标点
+  s = s.replace(/[。！？，、；：]{2,}/g, (m) => (m.includes("。") ? "。" : m[0]));
+  s = s.replace(/^[，、；。：\s]+|[，、；：\s]+$/g, "");
+  s = s.replace(/[，、]{2,}/g, "，");
 
   return s.trim();
 }
@@ -2441,6 +2448,20 @@ export class XiaoaiRuntime {
     }
     this.log(`🔊 [${spk.name || spk.did}] ${reply.slice(0, 120)}`);
     await this.#safeSay(spk, reply);
+    // ── 【2026-09-21 修复】回答播完后再重置一次倒计时 ──
+    //
+    // 症状（用户实测三次复现）：AI 模式下回答还没播完就退出。
+    //   12:53:24 提问 → 12:53:54 退出（正好 30 秒）
+    //   · 回答耗时 10-13 秒（LLM 推理）+ 播放 10-20 秒（TTS）
+    //   · 倒计时却从【提问时刻】算起，于是用户听完回答只剩几秒
+    //
+    // 根因：倒计时只在「提问时」touch 了一次（见 #advanceAiMode 里
+    //   `#sayPhrase(onAIAsking)` 之后那次），而提问到播完回答之间
+    //   可能花掉 30 秒中的大部分。
+    //
+    // 修复：回答播完（await 返回）后再 touch 一次 —— 用户听完回答，
+    //   从这一刻起才有完整的 exitKeepAliveAfter 秒可以接着说。
+    if (spk.aiMode !== "idle") this.#touchKeepAlive(spk);
     spk.lastReply = { text: reply, at: Date.now() };
     spk.lastSpokenAt = Date.now();
     if (this.#representativeContext() === spk) {
