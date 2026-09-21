@@ -1,117 +1,101 @@
 # dsh-xiaoai
 
-把 **小米音箱（小爱）** 变成 DSH 的**耳朵和嘴巴**。
+让小米音箱成为 **DSH 的语音入口** —— 不只是聊天，而是能真实操作你的家。
 
+## 功能一览
+
+### 🎤 语音对话
+- **上下文记忆**：同一音箱的对话共享上下文（"刚才说的那个"）
+- **AI 模式**：说「进入AI模式」后连续对话，无需重复喊触发词；静默 30 秒自动退出
+- **三类唤醒词**：直接问 / 进入模式 / 退出模式，语义各不相同
+- **文本清洗**：自动去掉 Markdown，避免音箱念出「星号星号」「反引号 switch 点 xxx」
+
+### 🏠 智能家居控制（DSH 能力）
+音箱背后是 DSH agent，可用工具包括：
+- **Home Assistant**（150+ 工具）：查/开关灯、空调、插座，建自动化与场景
+- **网络搜索**、**股票行情**、**发邮件**、**读写文档**
+- **设备状态复核**：agent 会主动验证操作是否生效，失败时如实报告
+
+### ⚡ 本地快速路径（毫秒级响应）
+这些指令**不走 LLM**，本机直接执行：
+- 「音量调到50」「大声点」「音量加10」
+- 「几点」「现在几点了」「报时」
+- 「停」「别说了」「停一下」
+
+### 🎛 设置面板（6 组 37 个字段）
 ```
-你说 → 小爱音箱 → 小米云 → 本插件 → DSH（灵犀）
-                                      ↓
-                                 控制 HA / 回答问题
-                                      ↓
-              小爱念出来 ← TTS ← 本插件
-```
-
-**本插件不做任何 AI 处理** —— 大脑完全是 DSH。它只负责搬运语音。
-
----
-
-## 能力
-
-| 方向 | 说明 |
-|---|---|
-| **听** | 轮询小米云，抓取你对音箱说的话 |
-| **说** | 用音箱自带的 TTS 念出 DSH 的回复 |
-| **控制** | DSH 侧可调用全部工具（含 Home Assistant） |
-
----
-
-## 设置
-
-DSH → 设置 → **小爱语音**（`dsh-xiaoai`）
-
-| 字段 | 说明 |
-|---|---|
-| 启用 | 总开关 |
-| 小米 ID | 「个人信息」里的数字 ID，**不是手机号** |
-| 密码 | 小米账号密码 |
-| 音箱 DID | 米家设备名，或设备 ID |
-| 轮询间隔 | 毫秒，最小 2000 |
-| 回复最大字数 | 音箱念太长很难受，默认 400 |
-| 触发词 | 逗号分隔；**留空 = 全部转发** |
-| 忽略规则 | 正则，逗号分隔 |
-
----
-
-## 架构
-
-```
-src/
-├── index.js      插件服务端入口（设置注册 + 生命周期）
-├── rpc.js        Typert Remote 控制器（7 个端点）
-├── runtime.js    运行时：轮询循环 + 状态机 + DSH 会话
-├── xiaomi.js     小米 API 层（登录 / 抓对话 / TTS）
-└── client/
-    └── index.js  设置面板（React，无构建步骤）
-
-vendor/
-└── mi-service-lite.js   内置小米库（含绕过风控补丁）
-
-contract/INTERFACE.md    接口契约（改接口必须先改它）
-docs/DSH-PLUGIN-API.md   DSH 插件 API 权威参考
+① 会话与模型  ← 工作区 / Agent 预设 / 模型 / 会话复用
+② 接入音箱      启用 / 账号 / 密码 / DID / 型号 / 指令集
+③ 音箱行为      AI模式 / 轮询 / 字数 / 超时 / 关键词 / 本地快速路径 / 进度
+④ 提示语        9 组（对话流程 + 出错提示）
+⑤ 高级          忽略规则 / 历史 / 日志 / HTTP 桥接
+⑥ 状态与日志    最近活动 / 对话历史 / 运行日志 / 会话绑定
 ```
 
----
+### 🚀 首次接入
+- **从 HA 导入**（推荐）：一条命令拉取双服务凭据，零登录
+- **账号登录**：手机号/邮箱/小米ID，含风控处理
+- **设备自动发现**：列出账号下所有音箱，不用手填 DID
+- **4 步向导**：选方式 → 凭据 → 选音箱 → 测试
 
-## 关键设计决策
+## 快速开始
 
-### 1. 绕过小米异地登录风控
+```bash
+# 从 Home Assistant 导入凭据（推荐）
+node scripts/import-from-ha.mjs \
+  --host 192.168.3.3 --user root --password '***' \
+  --state-dir ~/.dsh/xiaoai-state \
+  --did <音箱DID> --hardware <型号如OH2P>
+```
 
-小米对「新设备 + 新 IP」登录会要求人工验证。本插件复用
-HA `xiaomi_miot` 集成已有的 `serviceToken` + `ssecurity`，
-写进 `.mi.json`（key 是 `mina` / `miiot`，**不是** `micoapi` / `xiaomiio`），
-并给 `vendor/mi-service-lite.js` 打了补丁：有缓存 token 就跳过密码登录。
+或在 DSH 设置面板 → 小爱语音 → 「重新接入」→ 「从 HA 导入」。
 
-### 2. 语音会话与主对话隔离
+## 重要说明
 
-**不用** `/api_server.js` 的 `/api/session` —— 那是全局单飞锁，
-主对话一忙语音就全部 429，且每次请求要跑满 120s 超时。
+### 小米凭据需要【两份】
+见 [docs/CREDENTIALS.md](docs/CREDENTIALS.md)：
+```
+micoapi  → 拉对话（听）
+xiaomiio → 控制音箱（说：TTS/唤醒/音量）
+```
+**缺任一份插件完全不可用**。这是最容易踩的坑。
 
-改为 `ctx.agents.create()` 自建**独立语音会话**（见 `contract/INTERFACE.md` §6）。
+### 手机登录的限制
+小米对异地登录有风控，纯 API 下无法完成验证码流程
+（vendor 库缺 cookie jar）。
+**「从 HA 导入」是可靠主路径** —— 只要 HA 装了 `xiaomi_miot` 集成。
 
-### 3. 三重防「念错话」
+## 文档
 
-| 防护 | 说明 |
+| 文档 | 内容 |
 |---|---|
-| 水位线持久化 | `lastTime` 存盘，重启不重放历史 |
-| 冷启动只对齐 | 首次轮询只记录水位，不回放 |
-| 去重集合 | 同一条消息只处理一次 |
-
-### 4. 静默失败防护
-
-小米 API 有几个**不报错但也不工作**的坑，均已硬化：
-
-| 坑 | 处理 |
-|---|---|
-| TTS >~3900 字节被拒（返回 `-704002000`） | 按 UTF-8 字节截断 + 检查返回值抛错 |
-| token 过期时 `getConversations()` 返回空 | 连续 5 次空返回 → 抛错告警 |
-| `answer[0]` 是 `Audio` 时丢文本 | 多路径提取器 + 跳过 `illegalContent` |
-
----
+| [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | 使用指南（三种唤醒方式、配置速查、常见问题）|
+| [docs/CREDENTIALS.md](docs/CREDENTIALS.md) | 凭据机制（双服务、三种来源、续期说明）|
+| [docs/DSH-PLUGIN-API.md](docs/DSH-PLUGIN-API.md) | 插件 API 契约 |
+| [docs/research/login-protocol.md](docs/research/login-protocol.md) | 小米登录协议全解（含实测证据）|
+| [docs/research/ui-redesign.md](docs/research/ui-redesign.md) | UI 设计方案 |
+| [docs/research/ui-acceptance.md](docs/research/ui-acceptance.md) | 验收报告（21/22 通过）|
 
 ## 开发
 
 ```bash
-node scripts/build.mjs        # src/ → lib/（无转译，纯拷贝）
-node tmp-tests/test_host.mjs  # 服务端自检（87 项断言）
-node tmp-tests/test_client.mjs # 客户端自检（10 项）
+node scripts/build.mjs              # src/ → lib/
+node --check src/client/index.js    # 语法检查
+node scripts/apply-local-fixes.mjs  # 本地环境适配补丁
 ```
 
-改完 `src/` 记得跑 `build.mjs`；`lib/` 才是 DSH 实际加载的目录。
-
----
+**⚠️ 本地适配补丁**：`src/index.js` 与 `src/rpc.js` 的锚点解析已针对
+npm 全局安装做适配（`DSH_BIN` / `process.argv[1]` / `<execPrefix>/lib/node_modules`）。
+若改动这些文件，**务必重新运行补丁脚本**，否则插件会报
+「无法载入 Schemastery」或「无法解析 @deepseek-ai/dsh-typert-protocol」。
 
 ## 已知限制
 
-- **响应有延迟**：DSH 处理复杂任务需要时间，音箱会沉默等待。
-- **音箱念长文本体验差**：故有 `maxReplyChars` 截断。
-- **小米可能变更 API**：`vendor/` 里的库是快照，上游变了要重新同步。
-- **无 CSS**：设置面板的 `.xiaoai-*` 类名未加样式，沿用 DSH 默认排版。
+- 手机验证码登录走不通（小米风控）→ 用「从 HA 导入」
+- 工作区选择是下拉（仅已注册工作区），无目录浏览器
+- 模型下拉取决于宿主暴露的模型数
+- 并发编辑（多标签）无版本冲突提示
+
+## 许可
+
+见 [LICENSE](LICENSE)。
