@@ -858,3 +858,133 @@ export async function probeSpeakers({ account = {}, store = null, did, timeoutMs
     }
   }
 }
+
+// ───────────────────────── 从远程 HA 导入 ─────────────────────────
+
+/**
+ * 从远程 Home Assistant 导入小米凭据（micoapi + xiaomiio 两份）。
+ *
+ * 背景：小米云的两个服务各需独立 token（见 docs/CREDENTIALS.md），
+ * 而 HA 的 xiaomi_miot 集成两份都有 —— 这是实测最省事、最可靠的来源。
+ *
+ * 安全与健壮性：
+ *   · 只读 HA 的凭据文件，绝不修改
+ *   · 密码通过 SSHPASS 环境变量传递，不出现在 argv（避免 ps 泄漏）
+ *   · 任一步失败就抛错，**不动本地 store**（避免把好的凭据弄坏）
+ *   · 成功时【合并】写入，保留本地已有字段（如 password）
+ *
+ * @param {{host: string, user: string, password: string, uid?: string,
+ *          did?: string, hardware?: string, storePath: string}} opts
+ * @returns {Promise<{ok: boolean, summary: {uid: string, mina: boolean, miiot: boolean, dir: string}}>}
+ */
+export async function importCredentialsFromHa(opts) {
+  const { host, user, password, uid, did, hardware, storePath } = opts;
+  const { execFileSync } = await import("node:child_process");
+  const { mkdirSync, writeFileSync, readFileSync, existsSync } = await import("node:fs");
+  const { dirname, resolve } = await import("node:path");
+
+  /** 远程执行；密码走环境变量。 */
+  const ssh = (cmd) =>
+    execFileSync(
+      "sshpass",
+      ["-e", "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+       `${user}@${host}`, cmd],
+      { env: { ...process.env, SSHPASS: password }, encoding: "utf8", timeout: 60_000 },
+    ).trim();
+
+  // 1. 探测 HA 的凭据目录（三种常见布局）
+  const HA_DIRS = [
+    "/homeassistant/.storage/xiaomi_miot",
+    "/config/.storage/xiaomi_miot",
+    "/usr/share/hassio/homeassistant/.storage/xiaomi_miot",
+  ];
+  let dir = null;
+  for (const d of HA_DIRS) {
+    try {
+      ssh(`test -d ${d} && echo ok`);
+      dir = d;
+      break;
+    } catch {
+      /* 试下一个 */
+    }
+  }
+  if (!dir) {
+    throw new Error(
+      `未能在 HA 上找到 xiaomi_miot 凭据目录（试过: ${HA_DIRS.join("、")}）。` +
+        "请确认 HA 装了该集成并已登录小米账号。",
+    );
+  }
+
+  // 2. 发现账号
+  const listing = ssh(`ls ${dir} 2>/dev/null | grep -E '^auth-[0-9]+-cn(-micoapi)?\\.json$'`);
+  const uids = [...new Set(
+    listing.split("\n").map((f) => f.match(/^auth-(\d+)-cn/)?.[1]).filter(Boolean),
+  )];
+  if (uids.length === 0) throw new Error("未在 HA 上找到 auth-*.json，可能该账号未登录");
+  const useUid = uid ?? uids[0];
+
+  // 3. 读两份凭据
+  const readJson = (file) => {
+    try {
+      const d = JSON.parse(ssh(`cat ${dir}/${file} 2>/dev/null`));
+      return d.data ?? d;
+    } catch {
+      return null;
+    }
+  };
+  const micoapi = readJson(`auth-${useUid}-cn-micoapi.json`);
+  const xiaomiio = readJson(`auth-${useUid}-cn.json`);
+
+  if (!micoapi?.service_token && !xiaomiio?.service_token) {
+    throw new Error("HA 上的两份凭据都没有 service_token（可能是过期的空壳）");
+  }
+
+  // 4. 组装（字段名严格按 vendor 的读取方式 —— device.deviceId 在 device 对象里）
+  const toSegment = (src, sid) => {
+    if (!src?.service_token) return undefined;
+    return {
+      userId: String(src.user_id ?? useUid),
+      sid,
+      serviceToken: src.service_token,
+      deviceId: src.device_id ?? "",
+      did: did ?? "",
+      device: { deviceId: src.device_id ?? "", hardware: hardware ?? "", did: did ?? "" },
+      pass: { ssecurity: src.ssecurity ?? "", passToken: "" },
+    };
+  };
+  const incoming = {};
+  const mina = toSegment(micoapi, "micoapi");
+  const miiot = toSegment(xiaomiio, "xiaomiio");
+  if (mina) incoming.mina = mina;
+  if (miiot) incoming.miiot = miiot;
+
+  // 5. 合并写入（保留本地 password 等字段）
+  const target = resolve(storePath);
+  let merged = incoming;
+  if (existsSync(target)) {
+    try {
+      const cur = JSON.parse(readFileSync(target, "utf8"));
+      merged = {
+        ...cur,
+        ...Object.fromEntries(
+          Object.entries(incoming).map(([k, v]) => [k, { ...(cur[k] ?? {}), ...v }]),
+        ),
+      };
+    } catch {
+      /* 现有文件坏了 —— 直接用导入的 */
+    }
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, JSON.stringify(merged, null, 2));
+
+  return {
+    ok: true,
+    summary: {
+      uid: String(useUid),
+      mina: Boolean(mina),
+      miiot: Boolean(miiot),
+      dir,
+      candidates: uids,
+    },
+  };
+}

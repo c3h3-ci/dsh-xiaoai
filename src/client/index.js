@@ -1170,6 +1170,57 @@ window.__ModuleLoader__.load({
 						})
 					)
 				);
+				// ── 附加：从远程 HA 导入 ──
+				//
+				// 本机扫描（importScan）只能看到**本机**的凭据。若 HA 不在本机
+				// （我们的实际部署就是这样：HA 在 192.168.3.3），扫描必然为空，
+				// 用户会以为"没得导"。这里提供填地址远程拉取。
+				//
+				// 为什么值得做：小米云有两个服务要两份凭据（micoapi 拉对话 +
+				// xiaomiio 控制音箱），手动凑很麻烦；HA 的 xiaomi_miot 两份都有。
+				children.push(
+					h("hr", { className: "xiaoai-sep", key: "ha-sep" }),
+					h(
+						"p",
+						{ className: "xiaoai-muted", key: "ha-tip" },
+						"HA 装在另一台机器上？填它的地址，我可以远程拉取凭据（同时拿到拉对话与控制音箱两份）。"
+					),
+					Field(
+						"HA 地址",
+						TextInput({
+							value: state.haHost,
+							onChange: state.onHaHostChange,
+							placeholder: "192.168.3.3"
+						}),
+						"Home Assistant 主机的 IP 或域名"
+					),
+					Field(
+						"SSH 用户",
+						TextInput({
+							value: state.haUser,
+							onChange: state.onHaUserChange,
+							placeholder: "root"
+						})
+					),
+					Field(
+						"SSH 密码",
+						TextInput({
+							value: state.haPassword,
+							onChange: state.onHaPasswordChange,
+							type: "password",
+							placeholder: "登录 HA 主机的密码"
+						}),
+						"仅用于本次拉取凭据，不会被保存"
+					),
+					h(
+						"div",
+						{ className: "xiaoai-actions", key: "ha-act" },
+						Button(state.busy ? "导入中…" : "从 HA 导入", state.onImportFromHa, {
+							primary: true,
+							disabled: state.busy
+						})
+					)
+				);
 			}
 
 			// ── Step 2b：账号登录 ──
@@ -1743,6 +1794,10 @@ window.__ModuleLoader__.load({
 			const [speakers, setSpeakers] = React.useState(null);
 			const [speakerDid, setSpeakerDid] = React.useState(null);
 			const [authUrl, setAuthUrl] = React.useState(null);
+			// 从远程 HA 导入凭据所需的连接信息
+			const [haHost, setHaHost] = React.useState("");
+			const [haUser, setHaUser] = React.useState("root");
+			const [haPassword, setHaPassword] = React.useState("");
 			const [doneSummary, setDoneSummary] = React.useState(null);
 			const [testResult, setTestResult] = React.useState(null);
 
@@ -1933,6 +1988,59 @@ window.__ModuleLoader__.load({
 					setWizardBusy(false);
 				}
 			}, [call, mode]);
+
+			/**
+			 * 从【远程 Home Assistant】导入凭据。
+			 *
+			 * 为什么需要：小米云要两份凭据（micoapi 拉对话 + xiaomiio 控制音箱），
+			 * 而 HA 的 xiaomi_miot 集成两份都有。HA 常与本机不在同一台机器，
+			 * 本机扫描（importScan）扫不到，所以要支持填地址远程拉取。
+			 */
+			const onImportFromHa = React.useCallback(async () => {
+				setWizardError(null);
+				setNotice(null);
+				if (!haHost.trim() || !haPassword.trim()) {
+					setWizardError("请填写 HA 地址与 SSH 密码");
+					return;
+				}
+				setWizardBusy(true);
+				try {
+					const result = await call("xiaoai.onboarding.importFromHa", {
+						host: haHost.trim(),
+						user: haUser.trim() || "root",
+						password: haPassword,
+						did: speakerDid || undefined,
+						hardware: undefined,
+					});
+					if (!result || !result.ok) {
+						setWizardError((result && result.error) || "导入失败");
+						return;
+					}
+					const sum = result.summary || {};
+					setNotice({
+						kind: "ok",
+						text:
+							`已从 HA 导入账号 ${sum.uid}：` +
+							`拉对话凭据 ${sum.mina ? "✅" : "❌"}、` +
+							`控制音箱凭据 ${sum.miiot ? "✅" : "❌"}。请继续选择音箱。`,
+					});
+					// 导入成功后直接进入"选音箱"步骤：列出设备
+					setSpeakers(null);
+					setStep(WIZARD_STEPS.SPEAKER);
+					try {
+						const disc = await call("xiaoai.onboarding.discoverSpeakers", {});
+						const list = (disc && disc.speakers) || [];
+						setSpeakers(list);
+						if (list.length === 1) setSpeakerDid(list[0].did);
+					} catch {
+						setSpeakers([]);
+					}
+				} catch (error) {
+					setWizardError("导入失败：" + describeError(error));
+				} finally {
+					setWizardBusy(false);
+				}
+			}, [call, haHost, haUser, haPassword, speakerDid]);
 
 			/** 从导入候选继续 → 列设备。 */
 			const onUseCandidate = React.useCallback(async () => {
@@ -2142,6 +2250,9 @@ window.__ModuleLoader__.load({
 						speakers,
 						speakerDid,
 						authUrl,
+						haHost,
+						haUser,
+						haPassword,
 						doneSummary,
 						testResult,
 						onChooseMode: setMode,
@@ -2151,6 +2262,10 @@ window.__ModuleLoader__.load({
 						onAccountChange: setAccount,
 						onLoginPasswordChange: setLoginPassword,
 						onLogin,
+						onImportFromHa,
+						onHaHostChange: setHaHost,
+						onHaUserChange: setHaUser,
+						onHaPasswordChange: setHaPassword,
 						onManualUserIdChange: setManualUserId,
 						onManualDidChange: setManualDid,
 						onManualSubmit,
