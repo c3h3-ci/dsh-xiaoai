@@ -1,0 +1,46 @@
+# 语音助手专用预设（小爱音箱场景）
+#
+# 为什么需要它：默认与 minimal 预设都是【面向屏幕的编码助手】——
+# persona 是「software engineer assistant」，工具以 bash/文件为主。
+# 语音场景需要的是：
+#   · 会说人话的 persona（系统提示里已由插件注入语音约束）
+#   · 家居控制（HA，经宿主级 dsh-mcp-connector 提供）
+#   · 查资料（web）
+#   · 邮件（agently）
+# 而不需要：文件读写、技能、任务板、插件管理等（都用不上且拖慢准备时间）。
+#
+# 注意：宿主级插件（MCP 连接器、HA 工具）不受预设影响，照常可用。
+
+# ── identity ────────────────────────────────────────────────────────────────
+# prefix 只写最简身份；语音播报约束由 dsh-xiaoai 插件通过
+# systemPrompt.section 注入（见 src/runtime.js 的 #installVoiceGuidance）。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: >-
+      你是家里的语音助手，通过智能音箱与用户对话。回答要简短、口语化，
+      能直接念出来。需要操作设备或查资料时，直接用工具去做，做完用一句话说结果。
+      效率要求：先用最贴切的工具一次做对，不要用 shell 反复试探；
+      查/控智能家居设备请直接用 mcp__ha_mcp__ 开头的工具。
+    # 不禁用运行时上下文之外的注入 —— 保留工具指引，让模型知道有哪些工具可用
+    includeRuntimeContext: false
+
+# ── 工具 ────────────────────────────────────────────────────────────────────
+
+# 网络搜索与抓取（查天气、新闻、百科）
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+
+# 让用户确认（重操作前问一句）
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+# shell（有些场景需要，且代价小）
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+# 目标管理（多步任务时用）
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
