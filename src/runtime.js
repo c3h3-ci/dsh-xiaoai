@@ -2748,6 +2748,53 @@ async #callHaMcp(toolName, args) {
   }
 
   /**
+   * 自检【家居直通】：只判断意图 + 走 MCP 调用链，【不播报】。
+   *
+   * 为什么单独开一个：`xiaoai.test` 走的是 agent 路径（`askDsh`），
+   * 而家居直通挂在轮询路径（`#advanceAiMode`）—— 用 test 验证不到。
+   * 这个方法把直通内部的判定与调用暴露出来，便于无副作用地自检：
+   *   · matched=false → 意图没识别（会交回 agent）
+   *   · matched=true  → 已走完 ha_search + ha_get_state / ha_call_service
+   *
+   * @param {string} text 模拟用户说的话
+   * @param {boolean} dryRun 只判断意图不实际调用（默认 false）
+   */
+  async testDirect(text, dryRun = false) {
+    const t = String(text ?? "").trim();
+    const askState = /(什么状态|什么情况|开着还是关着|开着吗|关着吗|是开还是关|亮着吗)/.test(t)
+      || (/^(?:帮我)?(?:看|查|看看|查查)/.test(t) && /(灯|空调|风扇|窗帘|插座|开关|热水器|扫地机)/.test(t));
+    const turnOn = /(打开|开启|开一下|把.{1,10}开)/.test(t) && /(灯|空调|风扇|窗帘|插座|开关|热水器|扫地机)/.test(t);
+    const turnOff = /(关掉|关闭|关上|把.{1,10}关)/.test(t) && /(灯|空调|风扇|窗帘|插座|开关|热水器|扫地机)/.test(t);
+    const intent = askState ? "ask" : turnOn ? "on" : turnOff ? "off" : null;
+    if (!intent) return { ok: true, matched: false, reason: "意图未识别（会交回 agent）" };
+    if (dryRun) return { ok: true, matched: true, intent, dryRun: true };
+
+    const name = t
+      .replace(/^(?:请|帮我|麻烦|你)?(?:看|查|看看|查查|把|给)/g, "")
+      .replace(/(现在|目前|一下|的状态|状态|什么状态|什么情况|开着还是关着|开着吗|关着吗|是开还是关|亮着吗|打开|开启|开一下|关掉|关闭|关上|开|关)/g, "")
+      .replace(/[？?。，,！!]/g, "").trim();
+    try {
+      const r = await this.#callHaMcp("ha_search", { query: name, limit: 5 });
+      const DOMAIN_RANK = { light: 0, switch: 1, fan: 2, climate: 3, cover: 4, media_player: 5, humidifier: 6, vacuum: 7, water_heater: 8, input_boolean: 9, select: 10 };
+      const candidates = (r?.entities ?? []).filter((e) => String(e?.entity_id ?? "").split(".")[0] in DOMAIN_RANK);
+      const hit = candidates.sort((a, b) => {
+        const da = DOMAIN_RANK[a.entity_id.split(".")[0]] ?? 99;
+        const db = DOMAIN_RANK[b.entity_id.split(".")[0]] ?? 99;
+        if (da !== db) return da - db;
+        return String(a.friendly_name ?? "").length - String(b.friendly_name ?? "").length;
+      })[0];
+      if (!hit) return { ok: true, matched: true, intent, entity: null, reason: "没找到可控设备" };
+      if (intent === "ask") {
+        const st = await this.#callHaMcp("ha_call_read_tool", { name: "ha_get_state", arguments: { entity_id: hit.entity_id } });
+        return { ok: true, matched: true, intent, entity: hit.entity_id, name: hit.friendly_name, state: st?.data?.state ?? st?.state };
+      }
+      return { ok: true, matched: true, intent, entity: hit.entity_id, name: hit.friendly_name, note: "dry：未实际执行开关（避免误操作）" };
+    } catch (err) {
+      return { ok: false, matched: true, intent, error: String(err?.message ?? err) };
+    }
+  }
+
+  /**
    * 直接让音箱念一段（契约 §4 xiaoai.speak）。
    *
    * ⚠️ 兼容语义：不传 did 时播报到**代表设备**（= 改造前唯一那台），
