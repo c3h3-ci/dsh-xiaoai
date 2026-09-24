@@ -1961,9 +1961,12 @@ async #tryHomeAssistantDirect(spk, text) {
   // 开关
   try {
     const svc = turnOn ? "turn_on" : "turn_off";
+    // ⚠️ 参数名是 entity_id（不是 target: {entity_id}）—— 实测报错：
+    //   "`target`: unknown parameter. Valid parameters: domain, service,
+    //    entity_id, data, return_response, wait, verbose, ..."
     await this.#callHaMcp("ha_call_write_tool", {
       name: "ha_call_service",
-      arguments: { domain: hit.entity_id.split(".")[0], service: svc, target: { entity_id: hit.entity_id } },
+      arguments: { domain: hit.entity_id.split(".")[0], service: svc, entity_id: hit.entity_id },
     });
     await this.#sayPhrase(spk, [`${turnOn ? "已经打开" : "已经关掉"}${hit.friendly_name || name}。`], "家居");
     return true;
