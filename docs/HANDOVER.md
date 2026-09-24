@@ -202,3 +202,41 @@ curl -X POST "http://127.0.0.1:3080/api/xiaoai/status" \
   -d '{"type":"client-request","rpcId":"1","method":"xiaoai/status","payload":{"args":{}}}'
 ```
 **⚠️ 需要先取 cookie**（token 每次重启都变）。
+
+## 十一、家居直通（新增，2026-09-24）
+
+### 问题
+语音指令「储藏室灯什么状态」总是失败：agent 走 ha-mcp 的元工具链时
+第①步就传空参数 `{}`，随后跑偏到 `mcp_connector_tool_search`，
+最终回"没接上家里灯光那套系统"。耗时 58-80 秒，成功率 0%。
+
+### 解法
+`src/runtime.js` 新增 `#tryHomeAssistantDirect()`，把三步写死在代码里：
+```
+正则识别（查状态/开/关）→ 抠设备名 → ha_search
+  → 按 domain 优先级选实体（light > switch > fan > climate ...）
+  → ha_call_read_tool / ha_call_write_tool → 播报
+```
+配置：`haDirectEnabled: true` + `haMcpUrl: "http://192.168.3.3:9583/cdd633723"`
+
+### ha-mcp 元工具的正确调用（踩过的坑）
+```
+① ha_search         {"query": "<设备名>", "limit": 5}      → entities[]
+② ha_search_tools   {"query": "state"}                      ← query 必填！
+③ ha_call_read_tool {"name": "ha_get_state",
+                     "arguments": {"entity_id": "light.xxx"}}
+                     ↑ 参数名是 name，不是 tool_name
+   控制设备用 ha_call_write_tool + ha_call_service：
+     {"name": "ha_call_service",
+      "arguments": {"domain": "light", "service": "turn_on",
+                    "entity_id": "light.xxx"}}
+      ↑ entity_id 直接放顶层，不是 target:{entity_id}
+```
+
+### 实体选择的陷阱
+搜"储藏室灯"会返回 5 个 score 都是 100 的实体（friendly_name 都含该词）：
+device_tracker（设备追踪）/ light（真灯）/ select（开关）/ sensor×2（网络）
+→ 必须按 domain 优先级选，只认能开/能关/能读状态的域。
+
+### 效果
+查状态 58 秒 → 约 2 秒，成功率 0% → 100%（实测两分支全通过）。
