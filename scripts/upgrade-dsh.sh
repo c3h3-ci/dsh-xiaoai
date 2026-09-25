@@ -73,7 +73,11 @@ fi
 
 # ── 3. 重启 ──
 log "④ 重启 dsh-web …"
-systemd-run --user --on-active=2 --unit="dsh-upgrade-$TS" systemctl --user restart dsh-web.service >/dev/null 2>&1
+# ⚠️ 用 systemd-run 启动【独立 unit】做重启 —— 若直接在这里调 systemctl，
+#    重启 dsh-web 会连带把本脚本（同 cgroup）一起杀掉，日志就断在半路
+#    （2026-09-25 实测：日志停在"等待 90 秒"，脚本进程消失）。
+systemd-run --user --on-active=2 --unit="dsh-upgrade-restart-$TS" \
+  systemctl --user restart dsh-web.service >/dev/null 2>&1
 log "   等待 90 秒（DSH 启动 + 插件加载）…"
 sleep 90
 
@@ -187,6 +191,13 @@ log "验证结果: $PASS 通过 / $FAIL 失败"
 # 关键项：前 6 项必须通过（飞书那项宽松）
 if [ "$FAIL" -gt 1 ]; then
   log "❌ 验证失败（$FAIL 项）→ 自动回滚"
+  log ""
+  log "── DSH 启动日志里的错误（诊断用）──"
+  journalctl --user -u dsh-web --since "10 min ago" --no-pager 2>/dev/null \
+    | grep -iE "error|cannot resolve|failed|missing" | tail -15 | sed 's/^/   /'
+  log "── 哨兵日志尾部 ──"
+  tail -20 ~/.dsh/xiaoai-sentinel.log 2>/dev/null | sed 's/^/   /'
+  log ""
   bash "$0" --do-rollback
   exit 1
 fi
