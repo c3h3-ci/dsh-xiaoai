@@ -37,7 +37,7 @@
     "deviceId": "DEVICE_ID_PLACEHOLDER",
     "did": "DID_PLACEHOLDER",
     "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },
-    "pass": { "ssecurity": "SSECURITY_PLACEHOLDER" }
+    "pass": { "ssecurity": "<REDACTED>" }
   },
   "miiot": {
     "userId": "USER_ID_PLACEHOLDER",
@@ -46,7 +46,7 @@
     "deviceId": "DEVICE_ID_PLACEHOLDER",
     "did": "DID_PLACEHOLDER",
     "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },
-    "pass": { "ssecurity": "SSECURITY_PLACEHOLDER" }
+    "pass": { "ssecurity": "<REDACTED>" }
   }
 }
 ```
