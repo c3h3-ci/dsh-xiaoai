@@ -3000,7 +3000,7 @@ const RPC_NS = "xiaoai";
 						TextInput({
 							value: state.manualDid,
 							onChange: state.onManualDidChange,
-							placeholder: "如 DID_PLACEHOLDER"
+							placeholder: "如 123456789"
 						}),
 						"不确定就留空 —— 下一步会让你从账号下的设备里选"
 					)

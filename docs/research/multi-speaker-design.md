@@ -82,7 +82,7 @@
 ## 2. 关键事实核实（本次实测）
 
 > 所有核实均用**本机真实账号凭据**（`~/.dsh/xiaoai-state/mi-store.json`，
-> userId=USER_ID_PLACEHOLDER）直连小米云完成，非推断。
+> userId=12345678）直连小米云完成，非推断。
 
 ### 2.1 账号下设备枚举
 
@@ -93,7 +93,7 @@ XIAOAI_MI_STORE=~/.dsh/xiaoai-state/mi-store.json node tmp-tests/probe-devices.m
 [PATCH] 复用缓存的 serviceToken，跳过登录
 === DEVICE COUNT: 1
 {"name":"Xiaomi 智能音箱 Pro","deviceID":"cbf60488-c95d-40f8-bc6d-afbd0b673d2b",
- "miotDID":"DID_PLACEHOLDER","hardware":"OH2P","presence":"online"}
+ "miotDID":"123456789","hardware":"OH2P","presence":"online"}
 ```
 
 **结论**：`MiNA.getDevices()`（`GET /admin/v2/device_list`）返回**账号下全量设备**，
@@ -235,7 +235,7 @@ static async getDevice(account) {
 node tmp-tests/probe-tts.mjs
 ```
 ```
-MiIOT bound device: {"name":"Xiaomi 智能音箱 Pro","did":"DID_PLACEHOLDER","deviceId":"SVXF0M6WA8Z9QCBP"}
+MiIOT bound device: {"name":"Xiaomi 智能音箱 Pro","did":"123456789","deviceId":"SVXF0M6WA8Z9QCBP"}
 MiNA  bound device: {"name":"Xiaomi 智能音箱 Pro","deviceId":"DEVICE_ID_PLACEHOLDER","hw":"OH2P"}
 ```
 
@@ -265,7 +265,7 @@ MiNA  bound device: {"name":"Xiaomi 智能音箱 Pro","deviceId":"DEVICE_ID_PLAC
 
 | | 方案 1 `dids: []` | **方案 2 `speakers: []`（推荐）** | 方案 3 `did` + `extraDids` |
 |---|---|---|---|
-| 形态 | `dids: ["DID_PLACEHOLDER","123"]` | `speakers: [{did,name,enabled,...}]` | `did: "981..."` + `extraDids: ["123"]` |
+| 形态 | `dids: ["123456789","123"]` | `speakers: [{did,name,enabled,...}]` | `did: "981..."` + `extraDids: ["123"]` |
 | 每设备独立配置 | ❌ 需另开平行数组，易错位 | ✅ 天然内聚 | ❌ 主设备与附加设备结构不对称 |
 | 每设备启用/停用 | ❌ 只能靠增删数组 | ✅ `enabled` 字段 | ⚠️ 需额外 `disabledDids` |
 | 每设备覆盖模型/工作区 | ❌ 需要 `overrides: {did: {...}}` 旁路 | ✅ 直接写在对象里 | ❌ 同方案 1 |
@@ -305,7 +305,7 @@ MiNA  bound device: {"name":"Xiaomi 智能音箱 Pro","deviceId":"DEVICE_ID_PLAC
   "version": 2,                          // ← 新增：schema 版本，用于迁移
 
   // ── 向后兼容投影（阶段 1 保留；阶段 3 可移除）──
-  "did": "DID_PLACEHOLDER",                    // ← 老字段保留，恒等于 speakers[0].did
+  "did": "123456789",                    // ← 老字段保留，恒等于 speakers[0].did
 
   // ── 全局默认（所有音箱继承）──
   "workspace": "/media/duola/devdata/AI-workspace",
@@ -321,7 +321,7 @@ MiNA  bound device: {"name":"Xiaomi 智能音箱 Pro","deviceId":"DEVICE_ID_PLAC
   // ── 设备列表（本方案核心）──
   "speakers": [
     {
-      "did": "DID_PLACEHOLDER",                // MiGPT/xiaogpt/runtime 三家通用标识（miotDID）
+      "did": "123456789",                // MiGPT/xiaogpt/runtime 三家通用标识（miotDID）
       "name": "Xiaomi 智能音箱 Pro",      // 展示名；从 discoverSpeakers 回填
       "model": "OH2P",                   // 硬件型号；决定 TTS 指令集
       "enabled": true,
@@ -561,7 +561,7 @@ async connect() {
 **✅ 实机验证结果**（本机真实凭据，临时打补丁后跑）：
 
 ```
-A connected: Xiaomi 智能音箱 Pro did= DID_PLACEHOLDER
+A connected: Xiaomi 智能音箱 Pro did= 123456789
 REAL store unchanged? YES ✅ (race eliminated)
 ```
 
@@ -881,7 +881,7 @@ function sessionKeyFor(did) {
 ```json
 {
   "version": 1,
-  "sessions": { "xiaoai:DID_PLACEHOLDER": "session-5ed32171-ad31-415d-9dcc-6375749baf26" }
+  "sessions": { "xiaoai:123456789": "session-5ed32171-ad31-415d-9dcc-6375749baf26" }
 }
 ```
 
@@ -954,12 +954,12 @@ function resolveEffective(global, speaker) {
 **已有会话（绑定旧 did）怎么办？**
 
 ```
-老配置: did = "DID_PLACEHOLDER"  →  session.json: { "xiaoai:DID_PLACEHOLDER": "session-xxx" }
-新配置: speakers = [{did: "DID_PLACEHOLDER", ...}, {did:"123", ...}]
+老配置: did = "123456789"  →  session.json: { "xiaoai:123456789": "session-xxx" }
+新配置: speakers = [{did: "123456789", ...}, {did:"123", ...}]
 ```
 
 **结论：零处理。** 因为：
-- 归一化后 `speakers[0].did === "DID_PLACEHOLDER"`，`sessionKeyFor` 算出**同一个 key**
+- 归一化后 `speakers[0].did === "123456789"`，`sessionKeyFor` 算出**同一个 key**
 - 旧 sessionId 继续被复用（`#storedSessionId(key)` 命中）
 - 新增设备只是新增 key，不影响老 key
 
@@ -1009,7 +1009,7 @@ export function BotStatusMeta({ tone, stateLabel, lastCheckedAt, healthState }) 
 │                                                                     │
 │  ┌────────────────────────────────────────────────────────────┐    │
 │  │ ● Xiaomi 智能音箱 Pro          OH2P · 在线      [⏸] [⚙] [🗑] │    │
-│  │   did: DID_PLACEHOLDER                                           │    │
+│  │   did: 123456789                                           │    │
 │  │   ▸ 使用全局配置（工作区 / 模型 / 预设）                      │    │
 │  └────────────────────────────────────────────────────────────┘    │
 │                                                                     │
@@ -1096,7 +1096,7 @@ export function BotStatusMeta({ tone, stateLabel, lastCheckedAt, healthState }) 
 {
   "speakers": [
     {
-      "did": "DID_PLACEHOLDER",
+      "did": "123456789",
       "name": "Xiaomi 智能音箱 Pro",
       "model": "OH2P",
       "connected": true,
@@ -1115,7 +1115,7 @@ export function BotStatusMeta({ tone, stateLabel, lastCheckedAt, healthState }) 
     }
   ],
   // ── 向后兼容投影：老 UI 代码读 status.speaker 仍可用 ──
-  "speaker": { "connected": true, "name": "Xiaomi 智能音箱 Pro", "model": "OH2P", "did": "DID_PLACEHOLDER" },
+  "speaker": { "connected": true, "name": "Xiaomi 智能音箱 Pro", "model": "OH2P", "did": "123456789" },
   // ── 账号级状态 ──
   "phase": "running",
   "accountOnline": true
@@ -1159,7 +1159,7 @@ export function BotStatusMeta({ tone, stateLabel, lastCheckedAt, healthState }) 
 |---|---|---|---|
 | 老配置（只有 `did`） | 单音箱 | 归一化为 `speakers[0]` | ✅ 无感 |
 | 老配置 + 老 UI 代码 | 读 `did` | `did` 投影继续存在 | ✅ |
-| 老 `session.json` | `xiaoai:DID_PLACEHOLDER` | 同一 key | ✅ 复用 |
+| 老 `session.json` | `xiaoai:123456789` | 同一 key | ✅ 复用 |
 | `xiaoai.status` 老消费者 | 读 `status.speaker` | 投影保留 | ✅ |
 | `xiaoai.speak` 老调用 | 播报到唯一设备 | 默认播报 `speakers[0]` | ✅ |
 | `onboarding.apply({did})` | 写单 `did` | 写 `did` **且** upsert 到 `speakers[]` | ✅ |

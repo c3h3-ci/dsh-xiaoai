@@ -142,7 +142,7 @@ React #310: 无（reactErrorsInBody = false）
 ### 4.2 设备卡片结构 ✅
 
 ```
-卡片文本: "Xiaomi 智能音箱 Pro在线 ⏸ ⚙ 🗑 did: DID_PLACEHOLDER"
+卡片文本: "Xiaomi 智能音箱 Pro在线 ⏸ ⚙ 🗑 did: 123456789"
 data-tone: "ok"          ← 状态点语义正确
 三个按钮的 aria-label: 停用 / 配置 / 移除   ← 无障碍到位
 覆盖摘要: "▸ 使用全局配置（工作区 / 模型 / 预设）"
@@ -169,8 +169,8 @@ aria-expanded 正确切换 true/false
    → 卡片名称实时变为 "客厅音箱"
 2. 点「保存」→ "设置已保存。"
 3. 后端核对：
-     did     = "DID_PLACEHOLDER"          ← 老投影保留 ✅
-     speakers= [{"did":"DID_PLACEHOLDER","name":"客厅音箱","model":"",
+     did     = "123456789"          ← 老投影保留 ✅
+     speakers= [{"did":"123456789","name":"客厅音箱","model":"",
                  "enabled":true,"workspace":null,"agentPreset":null,"provider":null}]
      revision= 8 → 9                 ← 乐观锁正常 ✅
 4. 整页刷新 → 卡片显示 "客厅音箱"，synthetic 徽章【消失】
@@ -247,7 +247,7 @@ confirm 文案实测（设计 §6.2 要求"具体"）：
 【多设备布局：手工向后端注入第二台设备后实测】
 cards: 2
 卡片①  tone="muted"  名称="Xiaomi 智能音箱 Pro"  型号="OH2P"
-       did="did: DID_PLACEHOLDER"
+       did="did: 123456789"
        覆盖摘要="▸ 使用全局配置（工作区 / 模型 / 预设）"
 卡片②  tone="muted"  名称="小爱音箱 mini"        型号="LX06"
        did="did: 999000111"
@@ -316,7 +316,7 @@ node scripts/build.mjs                ✅ 11 文件同步 + 断链自检通过
 ```
 
 > **测试数据已清理**：为验证多设备而注入的假设备（`did: 999000111`）已从后端移除，
-> 当前配置为真实设备 `DID_PLACEHOLDER` / `Xiaomi 智能音箱 Pro` / `OH2P`。
+> 当前配置为真实设备 `123456789` / `Xiaomi 智能音箱 Pro` / `OH2P`。
 
 ## 8. 后端就绪后的衔接点
 

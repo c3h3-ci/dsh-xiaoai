@@ -14,8 +14,8 @@
 HA 的 `.storage/xiaomi_miot/` 目录下**同时存在两份凭据**：
 
 ```
-auth-USER_ID_PLACEHOLDER-cn-micoapi.json   sid=micoapi    token 216 字符   更新 2026-09-21 00:55  ⭐
-auth-USER_ID_PLACEHOLDER-cn.json           sid=xiaomiio   token 192 字符   更新 2026-09-18 09:42
+auth-12345678-cn-micoapi.json   sid=micoapi    token 216 字符   更新 2026-09-21 00:55  ⭐
+auth-12345678-cn.json           sid=xiaomiio   token 192 字符   更新 2026-09-18 09:42
 ```
 
 **判断错误的来源**：只看了 `core.config_entries` 里记录的那一条（`xiaomiio`），
@@ -56,13 +56,13 @@ mi-store.json
 
 ```bash
 # 列出 HA 上的两份凭据
-sshpass -e ssh root@192.168.3.3 "ls -la /homeassistant/.storage/xiaomi_miot/auth-USER_ID_PLACEHOLDER-*.json"
+sshpass -e ssh root@192.168.3.3 "ls -la /homeassistant/.storage/xiaomi_miot/auth-12345678-*.json"
 
 # 各自的实际 sid
-sshpass -e ssh root@192.168.3.3 "cat /homeassistant/.storage/xiaomi_miot/auth-USER_ID_PLACEHOLDER-cn-micoapi.json"  # sid=micoapi
-sshpass -e ssh root@192.168.3.3 "cat /homeassistant/.storage/xiaomi_miot/auth-USER_ID_PLACEHOLDER-cn.json"          # sid=xiaomiio
+sshpass -e ssh root@192.168.3.3 "cat /homeassistant/.storage/xiaomi_miot/auth-12345678-cn-micoapi.json"  # sid=micoapi
+sshpass -e ssh root@192.168.3.3 "cat /homeassistant/.storage/xiaomi_miot/auth-12345678-cn.json"          # sid=xiaomiio
 
 # 交叉验证 token 不通用（用 xiaomiio 打 MiNA 端点）
-curl -H "Cookie: userId=USER_ID_PLACEHOLDER; serviceToken=<xiaomiio token>; deviceId=..." \
+curl -H "Cookie: userId=12345678; serviceToken=<xiaomiio token>; deviceId=..." \
      "https://userprofile.mina.mi.com/device_profile/v2/conversation?limit=3&..."   # → 401
 ```

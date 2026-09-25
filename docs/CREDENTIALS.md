@@ -31,21 +31,21 @@
 ```json
 {
   "mina": {
-    "userId": "USER_ID_PLACEHOLDER",
+    "userId": "12345678",
     "sid": "micoapi",
     "serviceToken": "<REDACTED>...",
     "deviceId": "DEVICE_ID_PLACEHOLDER",
-    "did": "DID_PLACEHOLDER",
-    "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },
+    "did": "123456789",
+    "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "123456789" },
     "pass": { "ssecurity": "<REDACTED>" }
   },
   "miiot": {
-    "userId": "USER_ID_PLACEHOLDER",
+    "userId": "12345678",
     "sid": "xiaomiio",
     "serviceToken": "<REDACTED>...",
     "deviceId": "DEVICE_ID_PLACEHOLDER",
-    "did": "DID_PLACEHOLDER",
-    "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },
+    "did": "123456789",
+    "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "123456789" },
     "pass": { "ssecurity": "<REDACTED>" }
   }
 }
