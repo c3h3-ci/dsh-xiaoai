@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# pre-push 钩子：推送前扫描敏感值
+# 安装：git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh" --history
