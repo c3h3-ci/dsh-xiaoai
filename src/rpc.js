@@ -489,31 +489,6 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
     }
 
     /**
-     * `xiaoai.testDirect({ text, dryRun? })` → 家居直通自检。
-     *
-     * 家居直通挂在**轮询路径**（`#advanceAiMode`），`xiaoai.test` 走的是
-     * agent 路径 —— 用 test 验证不到直通。此端点把直通的判定与 MCP 调用
-     * 单独暴露出来，**不播报**，便于无副作用自检。
-     *
-     * 返回示例：
-     *   `{ matched: false }`                       意图没识别（会交回 agent）
-     *   `{ matched: true, intent:"ask", entity, name, state }`  查状态
-     *   `{ matched: true, intent:"on"|"off", entity }`          开关（dryRun 时不执行）
-     *
-     * @param {object} args `{ text, dryRun? }`。
-     */
-    async testDirect(args) {
-      const endpoint = "xiaoai.testDirect";
-      try {
-        const { text, dryRun } = asArgs(args, endpoint);
-        requireString(text, "text");
-        return await runtime.testDirect(text, dryRun === true);
-      } catch (err) {
-        throw fail(err, endpoint);
-      }
-    }
-
-    /**
      * `xiaoai.settings.recommended()` → `{ patch }` 推荐配置。
      *
      * 为什么值得做：用户配好账号后面对一堆空字段（唤醒词/直接问/退出词/
@@ -1069,7 +1044,6 @@ export function createXiaoaiControllerClass(protocol, runtime, deps) {
   applyRemote(Remote, XiaoaiController, "settingsUpdate", "settings.update");
   applyRemote(Remote, XiaoaiController, "restart");
   applyRemote(Remote, XiaoaiController, "test");
-  applyRemote(Remote, XiaoaiController, "testDirect", "testDirect");
   applyRemote(Remote, XiaoaiController, "speak");
   applyRemote(Remote, XiaoaiController, "listSpeakers", "speakers");
   applyRemote(Remote, XiaoaiController, "logs");
@@ -1119,7 +1093,6 @@ export const RPC_METHODS = Object.freeze({
   "xiaoai.settings.update": "settingsUpdate",
   "xiaoai.restart": "restart",
   "xiaoai.test": "test",
-  "xiaoai.testDirect": "testDirect",
   "xiaoai.speak": "speak",
   "xiaoai.speakers": "listSpeakers",
   "xiaoai.logs": "logs",

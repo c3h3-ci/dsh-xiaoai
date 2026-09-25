@@ -14,6 +14,13 @@
  */
 import "./bootstrap.js";
 import { appendFileSync } from "node:fs";
+import * as nodeModule from "node:module";
+
+// Config 在模块顶层求值（见下方 export const Config），所以这两个状态量
+// 必须声明在它【之前】，否则触发 TDZ：
+//   Cannot access 'schemasterySyncResolved' before initialization
+let schemasterySync = undefined;
+let schemasterySyncResolved = false;
 import { XiaoaiRuntime, DEFAULTS } from "./runtime.js";
 import {
   RPC_NAMESPACE,
@@ -37,7 +44,69 @@ export const name = "dsh-xiaoai";
  * `TypertRemoteService` 在自己的构造函数里 `super(ctx, key)` 声明服务，
  * 由 Gateway 的 source-mode 扫描 `typertRemote` 绑定发现（见 rpc.js 头部注释）。
  */
+/**
+ * 把 0.1.7 的 SettingsForms 适配成旧版 scope 形状 {get, watch, update, replace}。
+ *
+ * 0.1.7 破坏性变更：settings 重写为 SettingsForms，`register(ns, schema)` 被移除，
+ * 配置来源改为「模块级 export const Config + 框架注入」。
+ * 这里把新接口包装成旧形状，使 apply() 下游（runtime.bindSettings / getSettingsView）
+ * 零改动即可同时跑在 0.1.5 与 0.1.7 上。
+ *
+ * @param {object} settings SettingsForms 实例（ctx.settings）。
+ * @param {string} ns 命名空间（0.1.7 里 = profile entry 的 id）。
+ * @returns {{get: Function, watch: Function, update: Function, replace: Function}}
+ */
+function makeFormsScope(settings, ns) {
+  const findEntry = () => {
+    try {
+      const all = settings.describe?.({ redactSecrets: false }) ?? [];
+      return all.find((d) => d.ns === ns);
+    } catch {
+      return undefined;
+    }
+  };
+  return {
+    /** 读当前解析值；未注册时返回 undefined，交给 runtime 用 DEFAULTS 兜底。 */
+    get() {
+      return findEntry()?.value;
+    },
+    /** 订阅变更；新架构改用事件总线通知，拿不到就退化为空订阅。 */
+    watch(fn) {
+      try {
+        const owner = settings.ownerContext ?? settings.ctx;
+        const off = owner?.on?.("settings/document-updated", (changed) => {
+          if (changed === ns) fn?.(findEntry()?.value);
+        });
+        return typeof off === "function" ? off : () => {};
+      } catch {
+        return () => {};
+      }
+    },
+    async update(patch) {
+      return settings.update(ns, patch, findEntry()?.revision);
+    },
+    async replace(next) {
+      return settings.replace(ns, next, findEntry()?.revision);
+    },
+  };
+}
+
 export const inject = ["settings"];
+
+/**
+ * 0.1.7+ 的配置 schema 导出（静态声明式）。
+ *
+ * ⚠️ 新旧架构差异（0.1.7 破坏性变更）：
+ *   0.1.5: 插件在 apply() 里【运行时调用】ctx.settings.register(ns, schema)
+ *          再拿返回的 scope.get() 读值。
+ *   0.1.7: settings 重写为 SettingsForms —— register() 被移除，改为
+ *          【静态导出】`Config`（schema）+ `apply(ctx, config)` 由框架注入配置值。
+ *          命名空间 = profile entry 的 id（即包名）。
+ *
+ * 我们同时导出 Config（供 0.1.7+ 使用，懒加载 schemastery）与保留旧路径，
+ * 让一个包能同时跑在两个大版本上。
+ */
+
 //
 // ⚠️ 为什么不把 `agents` 写进 inject（这是插件静态 pending 的元凶）：
 //
@@ -293,30 +362,6 @@ function buildSettingsSchema(z) {
         }),
       )
       .default([]),
-    /**
-     * 家居意图直通 —— 把"查设备/开关设备"直接映射到 ha-mcp 调用。
-     * 开启后：识别到这类指令时插件直接调 MCP，不走 agent 的多步工具推理
-     * （实测 agent 在 ha-mcp 元工具链上失败率高）。
-     */
-    haDirectEnabled: z.boolean().default(true),
-    /** ha-mcp 的 MCP 端点 URL（如 http://192.168.3.3:9583/xxxx）。 */
-    haMcpUrl: z.string().default(""),
-    /**
-     * 远程 HA 的 SSH 连接（插件不在 HA 容器内时用）。
-     * token 过期后从 HA 的 xiaomi_miot 缓存拉新 token。
-     * 同机（addon）留空；跨机（台式 DSH + 远程 HA）必填。
-     */
-    haRemote: z
-      .union([
-        z.object({
-          host: z.string().default(""),
-          user: z.string().default("root"),
-          password: z.string().default(""),
-          container: z.string().default("homeassistant"),
-        }),
-        z.const(null),
-      ])
-      .default(null),
     /** 配置 schema 版本（v1 = 单 did，v2 = speakers[]）。 */
     settingsVersion: z.number().default(2),
 
@@ -477,12 +522,19 @@ export function apply(ctx, config = {}) {
         // 因此这里用 Promise.resolve() 包一层再挂 catch。
         const ret = ctx.inject(["settings"], async (sctx) => {
           try {
-            const z = await loadSchemastery();
-            const scope = sctx.settings.register(SETTINGS_NS, buildSettingsSchema(z));
-            if (!settled) {
-              settled = true;
-              resolve({ scope, settings: sctx.settings });
+            const settings = sctx.settings;
+            // ── 版本自适应：0.1.5 用 register()，0.1.7+ 改为静态 Config ──
+            // 0.1.7 把 settings 重写为 SettingsForms，register() 已移除。
+            // 这里探测能力：有 register 走旧路径，否则用 describe() 适配。
+            if (typeof settings?.register === "function") {
+              const z = await loadSchemastery();
+              const scope = settings.register(SETTINGS_NS, buildSettingsSchema(z));
+              if (!settled) { settled = true; resolve({ scope, settings, mode: "register" }); }
+              return;
             }
+            // 新路径（0.1.7+）：包装成与旧 scope 等价的接口，下游代码零改动。
+            const scope = makeFormsScope(settings, SETTINGS_NS);
+            if (!settled) { settled = true; resolve({ scope, settings, mode: "forms" }); }
           } catch (err) {
             fail(err);
           }
@@ -652,6 +704,7 @@ export function apply(ctx, config = {}) {
 /** 缓存，避免每次 apply 都重新解析。 */
 let schemasteryPromise = null;
 
+
 /**
  * 载入宿主里的 Schemastery。
  *
@@ -664,6 +717,52 @@ let schemasteryPromise = null;
  *
  * @returns {Promise<object>} Schemastery 默认导出。
  */
+/**
+ * 同步解析 Schemastery（供模块级 `export const Config` 使用）。
+ *
+ * ⚠️ 为什么必须同步：0.1.7 的 cordis 在装配插件时会立即读取
+ * `runtime.Config["~standard"].validate(config)`（cordis/lib/index.js:958），
+ * 也就是说 **Config 必须是一个真正的 Standard Schema 对象**，不能是 Promise
+ * 或「带 resolve() 的包装」—— 后者会让框架拿到 undefined 再去调 .validate，
+ * 抛 `Cannot read properties of undefined (reading 'validate')`。
+ *
+ * 好在 schemastery 提供 lib/index.cjs（CommonJS），可以用 createRequire 同步拿。
+ * 拿不到（异常环境）时返回 undefined，此时 Config 不导出，退回 0.1.5 的
+ * 运行时 register 路径。
+ */
+function loadSchemasterySync() {
+  if (schemasterySyncResolved) return schemasterySync;
+  schemasterySyncResolved = true;
+  try {
+    const { createRequire } = nodeModule;
+    const home = process.env.DSH_HOME ?? "/data/dsh";
+    const dshBin = process.env.DSH_BIN ?? process.argv[1] ?? "";
+    const dshRoot = dshBin.replace(/\/lib\/bin\.(js|mjs|cjs)$/, "");
+    const anchors = [
+      ...(dshRoot ? [`${dshRoot}/package.json`] : []),
+      `${home}/vendor/node_modules/@deepseek-ai/dsh/package.json`,
+      `${home}/node_modules/@deepseek-ai/dsh/package.json`,
+      new URL("../package.json", import.meta.url).pathname,
+    ];
+    for (const anchor of anchors) {
+      for (const spec of ["@deepseek-ai/schemastery", "schemastery"]) {
+        try {
+          const z = createRequire(anchor)(spec);
+          if (typeof z?.object === "function") {
+            schemasterySync = z;
+            return z;
+          }
+        } catch {
+          /* 试下一个锚点 */
+        }
+      }
+    }
+  } catch {
+    /* 交给运行时 register 路径兜底 */
+  }
+  return undefined;
+}
+
 async function loadSchemastery() {
   schemasteryPromise ??= (async () => {
     const { createRequire } = await import("node:module");
@@ -714,3 +813,21 @@ async function loadSchemastery() {
   })();
   return schemasteryPromise;
 }
+
+
+// ────────────────────────────────────────────────────────────────
+// 0.1.7+ 的配置 schema 导出
+// ────────────────────────────────────────────────────────────────
+//
+// ⚠️ 必须放在【文件末尾】：cordis 装配插件时会立即读取
+//   `Config["~standard"].validate(config)`（cordis/lib/index.js:958），
+// 所以 Config 得是一个真正的 Standard Schema 对象（不能是 Promise/包装）。
+// 而 buildSettingsSchema 依赖本文件里多个模块级常量（DEFAULTS、
+// ONBOARDING_DEFAULTS …），若在顶部求值会触发 TDZ：
+//   Cannot access 'ONBOARDING_DEFAULTS' before initialization
+// ESM 允许 export 与定义分离，因此这里在全部依赖就绪后再计算并导出。
+//
+// 拿不到 schemastery 时为 undefined —— 此时退回 0.1.5 的运行时
+// `settings.register()` 路径（见 apply() 里的能力探测）。
+const __z = loadSchemasterySync();
+export const Config = __z ? buildSettingsSchema(__z) : undefined;

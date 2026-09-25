@@ -16,3 +16,17 @@ src.bak-old/
 lib.bak-old/
 scripts.bak-old/
 tmp-tests/
+
+# ═══ 凭据文件保护（2026-09-25 加固）═══
+# 背景：dsh-xiaoai 仓库将公开，必须确保任何凭据不进版本库。
+# 小米账号凭据（serviceToken/ssecurity/password）泄露 = 音箱被控制。
+.mi.json
+*.mi.json
+.mi.json.*
+*.mi.json.*
+mi-store.json
+*.mi-store.json*
+tmp-tests/
+src.bak-old/
+*.bak
+*.bak-*
