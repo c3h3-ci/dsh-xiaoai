@@ -111,8 +111,8 @@ xiaomiio → TTS 播报（说）
 ### 9. ⚠️ HA 的 MCP 地址（易错）
 ```
 ❌ http://127.0.0.1:9584/private_xxx  （HA 容器内的 loopback，本机不可达）
-✅ http://192.168.3.3:9583/cdd633723  （HA 主机地址 + secret path）
-   或 http://192.168.3.3:8123/api/webhook/cdd633723
+✅ http://<HA主机>:9583/<secret_path>  （HA 主机地址 + secret path）
+   或 http://<HA主机>:8123/api/webhook/<webhook_id>
 ```
 
 ## 六、关键配置位置
@@ -217,7 +217,7 @@ curl -X POST "http://127.0.0.1:3080/api/xiaoai/status" \
   → 按 domain 优先级选实体（light > switch > fan > climate ...）
   → ha_call_read_tool / ha_call_write_tool → 播报
 ```
-配置：`haDirectEnabled: true` + `haMcpUrl: "http://192.168.3.3:9583/cdd633723"`
+配置：`haDirectEnabled: true` + `haMcpUrl: "http://<HA主机>:9583/<secret_path>"`
 
 ### ha-mcp 元工具的正确调用（踩过的坑）
 ```

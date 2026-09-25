@@ -33,7 +33,7 @@
   "mina": {
     "userId": "USER_ID_PLACEHOLDER",
     "sid": "micoapi",
-    "serviceToken": "I6mD4vzF/...",
+    "serviceToken": "<REDACTED>...",
     "deviceId": "DEVICE_ID_PLACEHOLDER",
     "did": "DID_PLACEHOLDER",
     "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },
@@ -42,7 +42,7 @@
   "miiot": {
     "userId": "USER_ID_PLACEHOLDER",
     "sid": "xiaomiio",
-    "serviceToken": "NWqQFgVMrO1...",
+    "serviceToken": "<REDACTED>...",
     "deviceId": "DEVICE_ID_PLACEHOLDER",
     "did": "DID_PLACEHOLDER",
     "device": { "deviceId": "DEVICE_ID_PLACEHOLDER", "hardware": "OH2P", "did": "DID_PLACEHOLDER" },

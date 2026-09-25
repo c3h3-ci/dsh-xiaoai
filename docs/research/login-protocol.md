@@ -899,7 +899,7 @@ async function verifyTicket(ticket, flag, identitySession) {
 **教训**：`core.config_entries` 只反映集成的**当前配置**，
 **不是**凭据的完整清单。凭据按 sid **分文件**存在集成自己的子目录里。
 （同类错误见 §7 —— 我因此又找到了第三个位置。）
-| `data.username` | `13736776363` | |
+| `data.username` | `<REDACTED>` | |
 
 ### 上游对照（`/media/duola/devdata/AI-workspace/mi-gpt/node_modules/mi-service-lite/dist/index.js`）
 | 位置 | 内容 |

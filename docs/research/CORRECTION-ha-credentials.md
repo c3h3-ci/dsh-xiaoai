@@ -27,8 +27,8 @@ auth-USER_ID_PLACEHOLDER-cn.json           sid=xiaomiio   token 192 字符   更
 
 ```
 mi-store.json
-  mina :  serviceToken = I6mD4vzF/l5OJX0s7LwrQ...   ← 来自 micoapi 文件（216 字符）
-  miiot:  serviceToken = NWqQFgVMrO1LEsybkPNH4m...  ← 来自 xiaomiio 文件（192 字符）
+  mina :  serviceToken = <REDACTED>...   ← 来自 micoapi 文件（216 字符）
+  miiot:  serviceToken = <REDACTED>4m...  ← 来自 xiaomiio 文件（192 字符）
 ```
 
 而音箱的"听"（`api2.mina.mi.com` 拉对话）**必须**用 micoapi 的 token ——
