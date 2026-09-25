@@ -71,6 +71,15 @@ export const DEFAULTS = Object.freeze({
   haDirectEnabled: true,
   /** ha-mcp 的 MCP 端点（空则不启用直通）。 */
   haMcpUrl: "",
+  /**
+   * 远程 HA 的 SSH 连接（插件不在 HA 容器内时用）。
+   *
+   * 用途：token 过期后从 HA 的 xiaomi_miot 缓存里拉新 token。
+   * 同机场景（addon）留空即可；跨机场景（如台式 DSH + 远程 HA）
+   * 必须填，否则刷新必然失败，日志表现为「未能从 HA 读取到认证缓存」。
+   * 形如：{ host: "192.168.3.3", user: "root", password: "***" }
+   */
+  haRemote: null,
   // ── 提示语（空数组 = 不播报）──
   onEnterAI: ["AI模式已开启"],
   onExitAI: ["已退出AI模式"],
@@ -567,6 +576,20 @@ export class XiaoaiRuntime {
     next.pollIntervalMs = Math.max(MIN_POLL_MS, Number(next.pollIntervalMs) || DEFAULTS.pollIntervalMs);
   next.haDirectEnabled = next.haDirectEnabled !== false;
   next.haMcpUrl = String(next.haMcpUrl ?? "").trim();
+  // haRemote：对象或 null（归一化掉空 host）
+  if (next.haRemote && typeof next.haRemote === "object") {
+    const host = String(next.haRemote.host ?? "").trim();
+    next.haRemote = host
+      ? {
+          host,
+          user: String(next.haRemote.user ?? "root").trim() || "root",
+          password: String(next.haRemote.password ?? ""),
+          container: String(next.haRemote.container ?? "homeassistant").trim() || "homeassistant",
+        }
+      : null;
+  } else {
+    next.haRemote = null;
+  }
     next.replyTimeoutMs = Math.max(5000, Number(next.replyTimeoutMs) || DEFAULTS.replyTimeoutMs);
     next.maxReplyChars = Math.max(20, Number(next.maxReplyChars) || DEFAULTS.maxReplyChars);
     if (!Array.isArray(next.triggerKeywords)) next.triggerKeywords = [];
@@ -2139,7 +2162,9 @@ async #callHaMcp(toolName, args) {
     // 而 HA 侧一直在维持登录态，直接借用即可（见 token-refresh.js）。
     if (this.#miStorePath) {
       try {
-        const r = mergeFreshTokens(this.#miStorePath, this.#config.userId, (m) => this.log(m));
+        const r = mergeFreshTokens(this.#miStorePath, this.#config.userId, (m) => this.log(m), {
+          remote: this.#config.haRemote,
+        });
         if (!r.refreshed && r.reason !== "token 未变化") this.log(`凭据同步: ${r.reason}`);
       } catch (err) {
         this.log(`凭据同步失败（继续用现有凭据）: ${err?.message ?? err}`);
@@ -2422,7 +2447,9 @@ async #callHaMcp(toolName, args) {
         if (shouldTryRefresh && this.#miStorePath) {
           this.log(`连续失败 ${this.#consecutiveErrors} 次，尝试刷新凭据并重连…`);
           try {
-            const r = mergeFreshTokens(this.#miStorePath, this.#config.userId, (m) => this.log(m));
+            const r = mergeFreshTokens(this.#miStorePath, this.#config.userId, (m) => this.log(m), {
+          remote: this.#config.haRemote,
+        });
             this.log(r.refreshed ? "凭据已更新，重连中" : `凭据未更新（${r.reason}）`);
             if (r.refreshed) {
               // ── 🚨 重启必须【限流 + 退避】，否则会打死机器 ──

@@ -15,6 +15,7 @@
  * 直接读挂载目录两种方式之一获取。优先直读文件，失败再走 API。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, chmodSync, unlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 
 /** HA 的 .storage 在本容器里的可能挂载点。 */
@@ -22,6 +23,50 @@ const HA_STORAGE_CANDIDATES = [
   "/config/.storage", // addon 若挂载了 config:rw
   "/data/homeassistant/.storage",
 ];
+
+/**
+ * 远程 HA 的连接信息（当插件【不在 HA 容器内】时用）。
+ *
+ * ── 为什么需要 ──
+ * 上面的 HA_STORAGE_CANDIDATES 假设插件与 HA 在同一台机器上
+ * （addon 场景）。但本插件也可以跑在【另一台机器的 DSH】上
+ * （实测：台式 DSH + HA 在 192.168.3.3），此时本机没有
+ * /config/.storage，本地读取必然失败 —— 日志表现为
+ * 「凭据同步: 未能从 HA 读取到 <uid> 的认证缓存」，
+ * token 过期后再也拉不到新的，音箱就哑了。
+ *
+ * 这里用 SSH（sshpass 走密码）在 HA 主机上执行 cat 把两个 auth
+ * 文件读回来，其余逻辑完全复用。
+ *
+ * 配置来源（按优先级）：
+ *   1. 显式传入的 options.remote
+ *   2. 环境变量 XIAOAI_HA_HOST / XIAOAI_HA_USER / XIAOAI_HA_PASSWORD
+ */
+function remoteConfig(options) {
+  const r = options?.remote ?? {};
+  const host = r.host ?? process.env.XIAOAI_HA_HOST ?? "";
+  const user = r.user ?? process.env.XIAOAI_HA_USER ?? "root";
+  const password = r.password ?? process.env.XIAOAI_HA_PASSWORD ?? "";
+  if (!host) return null;
+  return { host, user, password, container: r.container ?? "homeassistant" };
+}
+
+/** 通过 SSH 读取 HA 容器内的一个文件，失败返回 null。 */
+function readRemoteFile(remote, containerPath) {
+  try {
+    const args = [
+      "-e", "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+      `${remote.user}@${remote.host}`,
+      `docker exec ${remote.container} cat ${containerPath} 2>/dev/null`,
+    ];
+    const out = execFileSync("sshpass", args, {
+      encoding: "utf8", timeout: 25000, env: { ...process.env, SSHPASS: remote.password },
+    });
+    return JSON.parse(out);
+  } catch {
+    return null;
+  }
+}
 
 /** 找到 HA 的 .storage 目录，找不到返回 null。 */
 export function findHaStorage() {
@@ -37,18 +82,25 @@ export function findHaStorage() {
  * @param {string} uid 小米账号数字 ID（如 "USER_ID_PLACEHOLDER"）
  * @returns {{mina: object|null, miiot: object|null}}
  */
-export function readHaAuth(uid) {
+export function readHaAuth(uid, options = {}) {
   const store = findHaStorage();
+  const remote = remoteConfig(options);
   const out = { mina: null, miiot: null };
-  if (!store) return out;
+  if (!store && !remote) return out;
 
   const read = (file) => {
-    try {
-      const parsed = JSON.parse(readFileSync(`${store}/xiaomi_miot/${file}`, "utf8"));
-      return parsed?.data ?? null;
-    } catch {
-      return null;
+    // 本地优先（同机场景最快）
+    if (store) {
+      try {
+        const parsed = JSON.parse(readFileSync(`${store}/xiaomi_miot/${file}`, "utf8"));
+        if (parsed?.data) return parsed.data;
+      } catch { /* 落到远程 */ }
     }
+    if (remote) {
+      const parsed = readRemoteFile(remote, `/config/.storage/xiaomi_miot/${file}`);
+      if (parsed?.data) return parsed.data;
+    }
+    return null;
   };
 
   const micoapi = read(`auth-${uid}-cn-micoapi.json`);
@@ -84,8 +136,8 @@ export function readHaAuth(uid) {
  * @param {(m: string) => void} [log]
  * @returns {{refreshed: boolean, reason?: string}}
  */
-export function mergeFreshTokens(storePath, uid, log = () => {}) {
-  const fresh = readHaAuth(uid);
+export function mergeFreshTokens(storePath, uid, log = () => {}, options = {}) {
+  const fresh = readHaAuth(uid, options);
   if (!fresh.mina && !fresh.miiot) {
     return { refreshed: false, reason: `未能从 HA 读取到 ${uid} 的认证缓存` };
   }
