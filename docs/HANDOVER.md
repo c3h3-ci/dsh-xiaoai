@@ -240,3 +240,47 @@ device_tracker（设备追踪）/ light（真灯）/ select（开关）/ sensor�
 
 ### 效果
 查状态 58 秒 → 约 2 秒，成功率 0% → 100%（实测两分支全通过）。
+
+## 十二、跨机部署的凭据刷新（2026-09-25）
+
+### 问题（反复出现 4 次，每次都要人工修）
+小米 serviceToken 约 2 天过期。插件本有自动刷新，但**总是失败**：
+```
+[2026-09-24T16:56] 连续失败 3 次，尝试刷新凭据并重连…   ← 触发了
+[2026-09-25T01:16] 凭据同步: 未能从 HA 读取到 USER_ID_PLACEHOLDER 的认证缓存  ← 读不到
+[2026-09-25T01:16] [Xiaomi 智能音箱 Pro] 连接失败
+```
+
+### 根因
+`token-refresh.js` 只支持**本地文件系统**读 HA 的 .storage：
+```js
+const HA_STORAGE_CANDIDATES = ["/config/.storage", "/data/homeassistant/.storage"];
+```
+这是为「插件跑在 HA addon 容器内」设计的。当前部署是
+**台式 DSH + 远程 HA(192.168.3.3)** —— 本机没有这些路径。
+
+### 修复
+1. 新增 `remoteConfig(options)` + `readRemoteFile()`：用 sshpass 在 HA 主机上
+   `docker exec <container> cat <file>` 读回内容；**本地优先，失败落远程**。
+2. `mergeFreshTokens(storePath, uid, log, options)` 增加第 4 个参数。
+3. `runtime.js` 两处调用传 `{ remote: this.#config.haRemote }`。
+4. 新增配置项：
+```yaml
+dsh-xiaoai:
+  haRemote:
+    host: "192.168.3.3"
+    user: "root"
+    password: "***"
+    container: "homeassistant"
+```
+
+### 验证
+```
+mergeFreshTokens(..., { remote: {...} })
+→ {"refreshed": true}
+→ 日志: "mina token 已刷新 | miiot token 已刷新"
+```
+
+### 意义
+token 过期后**自动**恢复，不再需要人工跑 import 脚本（此前已人工修 4 次）。
+同机场景（addon）行为不变（本地优先，零额外开销）。
